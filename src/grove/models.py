@@ -176,10 +176,10 @@ class Habit(Base):
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
     area_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.areas.id"))
-    frequency: Mapped[str] = mapped_column(String(32), default="daily")
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    frequency: Mapped[str] = mapped_column(String(20), default="daily")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

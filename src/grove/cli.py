@@ -1195,7 +1195,7 @@ def habit_new(name: str, frequency: str, area_id: int | None):
                 console.print(f"[red]Area not found:[/red] {area_id}")
                 return
 
-        habit = Habit(name=name, frequency=frequency, area_id=area_id)
+        habit = Habit(title=name, frequency=frequency, area_id=area_id)
         session.add(habit)
         session.flush()
         console.print(f"[green]Created habit:[/green] {habit.id}: {name} ({frequency})")
@@ -1216,8 +1216,8 @@ def habit_list(show_all: bool):
     with get_session() as session:
         query = session.query(Habit)
         if not show_all:
-            query = query.filter(Habit.active == True)
-        habits = query.order_by(Habit.name).all()
+            query = query.filter(Habit.is_active == True)
+        habits = query.order_by(Habit.title).all()
 
         if not habits:
             console.print("[dim]No habits found[/dim]")
@@ -1241,7 +1241,7 @@ def habit_list(show_all: bool):
 
             status = "[green]✓[/green]" if today_done else "[dim]○[/dim]"
             freq_label = {"daily": "d", "weekly": "w", "3x_week": "3x"}[habit.frequency]
-            console.print(f"{status} {habit.id}: {habit.name} ({freq_label}) [{week_count}/7d]")
+            console.print(f"{status} {habit.id}: {habit.title} ({freq_label}) [{week_count}/7d]")
 
 
 @habit.command(name="done")
@@ -1264,7 +1264,7 @@ def habit_done(habit_id: int, notes: str | None):
 
         log = HabitLog(habit_id=habit_id, notes=notes)
         session.add(log)
-        console.print(f"[green]✓[/green] Logged: {habit.name}")
+        console.print(f"[green]✓[/green] Logged: {habit.title}")
 
 
 @habit.command(name="stats")
@@ -1274,7 +1274,7 @@ def habit_stats(habit_id: int):
 
     Example: gv habit stats 1
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from grove.db import get_session
     from grove.models import Habit, HabitLog
 
@@ -1284,7 +1284,7 @@ def habit_stats(habit_id: int):
             console.print(f"[red]Habit not found:[/red] {habit_id}")
             return
 
-        console.print(f"[bold]{habit.name}[/bold] ({habit.frequency})")
+        console.print(f"[bold]{habit.title}[/bold] ({habit.frequency})")
         console.print()
 
         # Get all logs
@@ -1294,13 +1294,16 @@ def habit_stats(habit_id: int):
 
         total = len(logs)
 
+        # Use timezone-aware datetime for comparisons
+        now = datetime.now(timezone.utc)
+
         # This week
-        week_ago = datetime.utcnow() - timedelta(days=7)
-        this_week = len([l for l in logs if l.completed_at >= week_ago])
+        week_ago = now - timedelta(days=7)
+        this_week = len([l for l in logs if l.completed_at and l.completed_at >= week_ago])
 
         # This month
-        month_ago = datetime.utcnow() - timedelta(days=30)
-        this_month = len([l for l in logs if l.completed_at >= month_ago])
+        month_ago = now - timedelta(days=30)
+        this_month = len([l for l in logs if l.completed_at and l.completed_at >= month_ago])
 
         # Current streak
         streak = 0
@@ -1347,8 +1350,8 @@ def habit_pause(habit_id: int):
             console.print(f"[red]Habit not found:[/red] {habit_id}")
             return
 
-        habit.active = False
-        console.print(f"[yellow]Paused:[/yellow] {habit.name}")
+        habit.is_active = False
+        console.print(f"[yellow]Paused:[/yellow] {habit.title}")
 
 
 @habit.command(name="resume")
@@ -1367,8 +1370,8 @@ def habit_resume(habit_id: int):
             console.print(f"[red]Habit not found:[/red] {habit_id}")
             return
 
-        habit.active = True
-        console.print(f"[green]Resumed:[/green] {habit.name}")
+        habit.is_active = True
+        console.print(f"[green]Resumed:[/green] {habit.title}")
 
 
 if __name__ == "__main__":
