@@ -7,11 +7,13 @@ from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-# Default to local postgres with todos schema
-DATABASE_URL = os.environ.get(
-    "TODO_DATABASE_URL",
-    "postgresql://localhost/connectingservices"
-)
+# Database URL from environment, no default (must be configured)
+DATABASE_URL = os.environ.get("TODO_DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError(
+        "TODO_DATABASE_URL environment variable is required. "
+        "Example: export TODO_DATABASE_URL='postgresql://localhost/grove'"
+    )
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

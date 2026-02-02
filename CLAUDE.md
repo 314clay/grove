@@ -1,10 +1,18 @@
-# Refinery Context (todo_system)
+# Grove
 
-> **Recovery**: Run `gt prime` after compaction, clear, or new session
+Hierarchical task management CLI.
 
-Full context is injected by `gt prime` at session start.
+## Setup
 
-## Quick Reference
+```bash
+export TODO_DATABASE_URL="postgresql://localhost/yourdb"
+psql -d yourdb -f sql/schema.sql
+```
 
-- Check MQ: `gt mq list`
-- Process next: `gt mq process`
+## Commands
+
+- `gv add "task"` - Add to inbox
+- `gv inbox` - View inbox
+- `gv now` - Actionable tasks
+- `gv done <id>` - Complete task
+- `gv overview` - Full hierarchy
