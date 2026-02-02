@@ -625,6 +625,305 @@ def push(project_id: int, task_ids: tuple, dry_run: bool):
             console.print(f"[green]Pushed {pushed}/{len(tasks)} task(s)[/green]")
 
 
+@beads.command()
+@click.argument("project_id", type=int)
+@click.option("--dry-run", is_flag=True, help="Show what would be imported without creating tasks")
+@click.option("--all", "import_all", is_flag=True, help="Import all beads, not just open ones")
+def pull(project_id: int, dry_run: bool, import_all: bool):
+    """Pull beads from linked repository as tasks.
+
+    Imports open beads from the project's linked beads repo as tasks.
+    Skips beads that have already been imported (matched by beads_id).
+
+    Example: gv beads pull 1
+    Example: gv beads pull 1 --all
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Project, Task
+    from grove.beads import (
+        resolve_beads_path,
+        read_beads_jsonl,
+        filter_open_beads,
+        map_bead_status_to_task_status,
+        map_bead_priority_to_importance,
+    )
+
+    with get_session() as session:
+        proj = session.query(Project).filter(Project.id == project_id).first()
+        if not proj:
+            console.print(f"[red]Project not found:[/red] {project_id}")
+            return
+
+        if not proj.beads_repo:
+            console.print(f"[red]Project not linked to beads.[/red] Use 'gv project link' first.")
+            return
+
+        try:
+            beads_dir = resolve_beads_path(proj.beads_repo)
+            all_beads = read_beads_jsonl(beads_dir)
+        except FileNotFoundError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            return
+
+        # Filter to open beads unless --all
+        beads_to_import = all_beads if import_all else filter_open_beads(all_beads)
+
+        if not beads_to_import:
+            console.print("[dim]No beads to import[/dim]")
+            return
+
+        # Get existing beads_ids to avoid duplicates
+        existing_bead_ids = set(
+            t.beads_id for t in session.query(Task.beads_id).filter(
+                Task.project_id == project_id,
+                Task.beads_id.isnot(None)
+            ).all()
+        )
+
+        console.print(f"[cyan]Pulling from:[/cyan] {beads_dir}")
+        console.print(f"[cyan]Found {len(beads_to_import)} bead(s), {len(existing_bead_ids)} already imported[/cyan]")
+        console.print()
+
+        imported = 0
+        skipped = 0
+        for bead in beads_to_import:
+            if bead.id in existing_bead_ids:
+                skipped += 1
+                continue
+
+            if dry_run:
+                console.print(f"  [dim]Would import:[/dim] {bead.id}: {bead.title}")
+            else:
+                task = Task(
+                    title=bead.title,
+                    description=bead.description,
+                    project_id=project_id,
+                    status=map_bead_status_to_task_status(bead.status),
+                    priority=map_bead_priority_to_importance(bead.priority),
+                    beads_id=bead.id,
+                    beads_synced_at=datetime.utcnow(),
+                )
+                session.add(task)
+                console.print(f"  [green]Imported:[/green] {bead.id}: {bead.title}")
+                imported += 1
+
+        console.print()
+        if dry_run:
+            new_count = len(beads_to_import) - len(existing_bead_ids)
+            console.print(f"[dim]Dry run complete. Would import {new_count} new bead(s), skip {skipped}.[/dim]")
+        else:
+            console.print(f"[green]Imported {imported} task(s), skipped {skipped} existing[/green]")
+
+
+@beads.command()
+@click.argument("project_id", type=int)
+@click.option("--dry-run", is_flag=True, help="Show what would be synced without making changes")
+def sync(project_id: int, dry_run: bool):
+    """Bidirectional sync between tasks and beads.
+
+    1. Pulls new beads as tasks (like 'gv beads pull')
+    2. Updates task statuses from changed beads
+    3. Pushes new tasks to beads (like 'gv beads push')
+
+    Example: gv beads sync 1
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Project, Task
+    from grove.beads import (
+        resolve_beads_path,
+        read_beads_jsonl,
+        filter_open_beads,
+        map_bead_status_to_task_status,
+        map_bead_priority_to_importance,
+        get_bead_by_id,
+    )
+
+    with get_session() as session:
+        proj = session.query(Project).filter(Project.id == project_id).first()
+        if not proj:
+            console.print(f"[red]Project not found:[/red] {project_id}")
+            return
+
+        if not proj.beads_repo:
+            console.print(f"[red]Project not linked to beads.[/red] Use 'gv project link' first.")
+            return
+
+        try:
+            beads_dir = resolve_beads_path(proj.beads_repo)
+            all_beads = read_beads_jsonl(beads_dir)
+        except FileNotFoundError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            return
+
+        beads_by_id = {b.id: b for b in all_beads}
+        open_beads = filter_open_beads(all_beads)
+
+        console.print(f"[cyan]Syncing project {project_id} with:[/cyan] {beads_dir}")
+        console.print()
+
+        # Phase 1: Pull new beads
+        console.print("[bold]Phase 1: Pull new beads[/bold]")
+        existing_tasks = session.query(Task).filter(
+            Task.project_id == project_id,
+            Task.beads_id.isnot(None)
+        ).all()
+        existing_bead_ids = {t.beads_id for t in existing_tasks}
+
+        pulled = 0
+        for bead in open_beads:
+            if bead.id not in existing_bead_ids:
+                if dry_run:
+                    console.print(f"  [dim]Would import:[/dim] {bead.id}: {bead.title}")
+                else:
+                    task = Task(
+                        title=bead.title,
+                        description=bead.description,
+                        project_id=project_id,
+                        status=map_bead_status_to_task_status(bead.status),
+                        priority=map_bead_priority_to_importance(bead.priority),
+                        beads_id=bead.id,
+                        beads_synced_at=datetime.utcnow(),
+                    )
+                    session.add(task)
+                    console.print(f"  [green]Imported:[/green] {bead.id}")
+                pulled += 1
+
+        if pulled == 0:
+            console.print("  [dim]No new beads to pull[/dim]")
+        console.print()
+
+        # Phase 2: Update existing tasks from beads
+        console.print("[bold]Phase 2: Update tasks from beads[/bold]")
+        updated = 0
+        for task in existing_tasks:
+            if task.beads_id in beads_by_id:
+                bead = beads_by_id[task.beads_id]
+                new_status = map_bead_status_to_task_status(bead.status)
+                if task.status != new_status:
+                    if dry_run:
+                        console.print(f"  [dim]Would update:[/dim] {task.id}: {task.status} → {new_status}")
+                    else:
+                        task.status = new_status
+                        task.beads_synced_at = datetime.utcnow()
+                        console.print(f"  [yellow]Updated:[/yellow] {task.id}: {task.status} → {new_status}")
+                    updated += 1
+
+        if updated == 0:
+            console.print("  [dim]No status updates needed[/dim]")
+        console.print()
+
+        # Phase 3: Report tasks without beads (candidates for push)
+        console.print("[bold]Phase 3: Tasks without beads (push candidates)[/bold]")
+        unlinked_tasks = session.query(Task).filter(
+            Task.project_id == project_id,
+            Task.beads_id.is_(None),
+            Task.status.in_(["inbox", "active"])
+        ).all()
+
+        if unlinked_tasks:
+            for task in unlinked_tasks:
+                console.print(f"  [dim]Not in beads:[/dim] {task.id}: {task.title}")
+            console.print(f"\n  [dim]Run 'gv beads push {project_id}' to export these[/dim]")
+        else:
+            console.print("  [dim]All tasks are linked to beads[/dim]")
+
+        console.print()
+        console.print(f"[bold]Summary:[/bold] Pulled {pulled}, updated {updated}, {len(unlinked_tasks)} unlinked")
+
+
+@beads.command()
+@click.argument("project_id", type=int)
+def status(project_id: int):
+    """Show beads sync status for a project.
+
+    Displays sync health: linked tasks, unlinked tasks, stale syncs.
+
+    Example: gv beads status 1
+    """
+    from datetime import datetime, timedelta
+    from grove.db import get_session
+    from grove.models import Project, Task
+    from grove.beads import resolve_beads_path, read_beads_jsonl, filter_open_beads
+
+    with get_session() as session:
+        proj = session.query(Project).filter(Project.id == project_id).first()
+        if not proj:
+            console.print(f"[red]Project not found:[/red] {project_id}")
+            return
+
+        console.print(f"[bold]{proj.title}[/bold]")
+        console.print()
+
+        if not proj.beads_repo:
+            console.print("[yellow]Not linked to beads[/yellow]")
+            console.print(f"[dim]Run 'gv project link {project_id} /path/to/.beads' to link[/dim]")
+            return
+
+        console.print(f"[cyan]Beads repo:[/cyan] {proj.beads_repo}")
+
+        try:
+            beads_dir = resolve_beads_path(proj.beads_repo)
+            all_beads = read_beads_jsonl(beads_dir)
+            open_beads = filter_open_beads(all_beads)
+            beads_by_id = {b.id: b for b in all_beads}
+        except FileNotFoundError as e:
+            console.print(f"[red]Error reading beads:[/red] {e}")
+            return
+
+        console.print(f"[cyan]Beads:[/cyan] {len(open_beads)} open / {len(all_beads)} total")
+        console.print()
+
+        # Get task stats
+        all_tasks = session.query(Task).filter(Task.project_id == project_id).all()
+        linked_tasks = [t for t in all_tasks if t.beads_id]
+        unlinked_tasks = [t for t in all_tasks if not t.beads_id and t.status in ("inbox", "active")]
+
+        # Check for stale syncs (>24h old)
+        stale_threshold = datetime.utcnow() - timedelta(hours=24)
+        stale_tasks = [t for t in linked_tasks if t.beads_synced_at and t.beads_synced_at < stale_threshold]
+
+        # Check for orphaned links (task points to bead that no longer exists)
+        orphaned_tasks = [t for t in linked_tasks if t.beads_id not in beads_by_id]
+
+        # Check for unimported beads
+        imported_bead_ids = {t.beads_id for t in linked_tasks}
+        unimported_beads = [b for b in open_beads if b.id not in imported_bead_ids]
+
+        console.print("[bold]Tasks[/bold]")
+        console.print(f"  Total: {len(all_tasks)}")
+        console.print(f"  Linked to beads: {len(linked_tasks)}")
+        console.print(f"  Unlinked (active): {len(unlinked_tasks)}")
+        console.print()
+
+        console.print("[bold]Sync Health[/bold]")
+        if stale_tasks:
+            console.print(f"  [yellow]Stale syncs (>24h):[/yellow] {len(stale_tasks)}")
+        else:
+            console.print(f"  [green]All syncs fresh[/green]")
+
+        if orphaned_tasks:
+            console.print(f"  [red]Orphaned links:[/red] {len(orphaned_tasks)}")
+            for t in orphaned_tasks[:3]:
+                console.print(f"    {t.id}: {t.beads_id} (bead not found)")
+        else:
+            console.print(f"  [green]No orphaned links[/green]")
+
+        if unimported_beads:
+            console.print(f"  [yellow]Unimported beads:[/yellow] {len(unimported_beads)}")
+            for b in unimported_beads[:3]:
+                console.print(f"    {b.id}: {b.title[:40]}")
+            if len(unimported_beads) > 3:
+                console.print(f"    ... and {len(unimported_beads) - 3} more")
+        else:
+            console.print(f"  [green]All open beads imported[/green]")
+
+        console.print()
+        if unlinked_tasks or unimported_beads:
+            console.print("[dim]Run 'gv beads sync {project_id}' to synchronize[/dim]")
+
+
 @main.command()
 def overview():
     """Show full hierarchy tree with counts and progress.
@@ -749,6 +1048,327 @@ def overview():
                       f"[cyan]{active_tasks} active[/cyan] | "
                       f"[yellow]{inbox_tasks} inbox[/yellow]")
         console.print()
+
+
+@main.command()
+def review():
+    """Guided weekly review flow.
+
+    Walks through a structured review:
+    1. Process inbox items
+    2. Review stale tasks
+    3. Check blocked work
+    4. Review project progress
+    5. Celebrate completions
+
+    Example: gv review
+    """
+    from datetime import datetime, timedelta
+    from grove.db import get_session
+    from grove.models import Task, Project, Area
+
+    with get_session() as session:
+        console.print()
+        console.print("[bold magenta]═══ Weekly Review ═══[/bold magenta]")
+        console.print()
+
+        # Step 1: Inbox
+        inbox_tasks = session.query(Task).filter(Task.status == "inbox").all()
+        console.print("[bold]1. Inbox[/bold]")
+        if inbox_tasks:
+            console.print(f"   [yellow]{len(inbox_tasks)} item(s) need clarification:[/yellow]")
+            for task in inbox_tasks[:5]:
+                console.print(f"   • {task.id}: {task.title}")
+            if len(inbox_tasks) > 5:
+                console.print(f"   ... and {len(inbox_tasks) - 5} more")
+            console.print()
+            console.print("   [dim]Run 'gv inbox' to process these[/dim]")
+        else:
+            console.print("   [green]✓ Inbox is empty[/green]")
+        console.print()
+
+        # Step 2: Stale tasks (not updated in 7+ days)
+        stale_threshold = datetime.utcnow() - timedelta(days=7)
+        stale_tasks = session.query(Task).filter(
+            Task.status == "active",
+            Task.updated_at < stale_threshold
+        ).all()
+
+        console.print("[bold]2. Stale Tasks[/bold]")
+        if stale_tasks:
+            console.print(f"   [yellow]{len(stale_tasks)} task(s) haven't been touched in 7+ days:[/yellow]")
+            for task in stale_tasks[:5]:
+                days_old = (datetime.utcnow() - task.updated_at).days
+                console.print(f"   • {task.id}: {task.title} ({days_old}d)")
+            if len(stale_tasks) > 5:
+                console.print(f"   ... and {len(stale_tasks) - 5} more")
+            console.print()
+            console.print("   [dim]Consider: still relevant? blocked? needs breakdown?[/dim]")
+        else:
+            console.print("   [green]✓ No stale tasks[/green]")
+        console.print()
+
+        # Step 3: Blocked tasks
+        from grove.models import TaskDependency
+        blocked_count = session.query(Task).join(
+            TaskDependency, Task.id == TaskDependency.task_id
+        ).filter(
+            Task.status == "active",
+            TaskDependency.dependency_type == "blocks"
+        ).distinct().count()
+
+        console.print("[bold]3. Blocked Work[/bold]")
+        if blocked_count:
+            console.print(f"   [yellow]{blocked_count} task(s) are blocked[/yellow]")
+            console.print("   [dim]Run 'gv blocked' to see details[/dim]")
+        else:
+            console.print("   [green]✓ No blocked tasks[/green]")
+        console.print()
+
+        # Step 4: Project progress
+        console.print("[bold]4. Project Progress[/bold]")
+        projects = session.query(Project).filter(Project.status == "active").all()
+        if projects:
+            for proj in projects[:5]:
+                tasks = session.query(Task).filter(Task.project_id == proj.id).all()
+                total = len(tasks)
+                done = len([t for t in tasks if t.status == "done"])
+                active = len([t for t in tasks if t.status == "active"])
+                if total > 0:
+                    pct = int(done / total * 100)
+                    bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
+                    console.print(f"   {bar} {pct}% {proj.title}")
+                    console.print(f"   [dim]{done} done, {active} active, {total - done - active} other[/dim]")
+                else:
+                    console.print(f"   [dim]{proj.title} (no tasks)[/dim]")
+            if len(projects) > 5:
+                console.print(f"   ... and {len(projects) - 5} more projects")
+        else:
+            console.print("   [dim]No active projects[/dim]")
+        console.print()
+
+        # Step 5: Recent completions
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        completed = session.query(Task).filter(
+            Task.status == "done",
+            Task.completed_at >= week_ago
+        ).all()
+
+        console.print("[bold]5. This Week's Wins[/bold]")
+        if completed:
+            console.print(f"   [green]🎉 {len(completed)} task(s) completed![/green]")
+            for task in completed[:5]:
+                console.print(f"   ✓ {task.title}")
+            if len(completed) > 5:
+                console.print(f"   ... and {len(completed) - 5} more")
+        else:
+            console.print("   [dim]No completions this week[/dim]")
+        console.print()
+
+        console.print("[bold magenta]═══ Review Complete ═══[/bold magenta]")
+        console.print()
+
+
+@main.group()
+def habit():
+    """Habit tracking commands."""
+    pass
+
+
+@habit.command(name="new")
+@click.argument("name")
+@click.option("--frequency", "-f", default="daily", type=click.Choice(["daily", "weekly", "3x_week"]))
+@click.option("--area", "-a", "area_id", type=int, help="Link to an area")
+def habit_new(name: str, frequency: str, area_id: int | None):
+    """Create a new habit to track.
+
+    Example: gv habit new "Morning meditation" -f daily
+    Example: gv habit new "Gym session" -f 3x_week --area 1
+    """
+    from grove.db import get_session
+    from grove.models import Habit, Area
+
+    with get_session() as session:
+        if area_id:
+            area = session.query(Area).filter(Area.id == area_id).first()
+            if not area:
+                console.print(f"[red]Area not found:[/red] {area_id}")
+                return
+
+        habit = Habit(name=name, frequency=frequency, area_id=area_id)
+        session.add(habit)
+        session.flush()
+        console.print(f"[green]Created habit:[/green] {habit.id}: {name} ({frequency})")
+
+
+@habit.command(name="list")
+@click.option("--all", "show_all", is_flag=True, help="Include inactive habits")
+def habit_list(show_all: bool):
+    """List all habits.
+
+    Example: gv habit list
+    Example: gv habit list --all
+    """
+    from grove.db import get_session
+    from grove.models import Habit, HabitLog
+    from datetime import datetime, timedelta
+
+    with get_session() as session:
+        query = session.query(Habit)
+        if not show_all:
+            query = query.filter(Habit.active == True)
+        habits = query.order_by(Habit.name).all()
+
+        if not habits:
+            console.print("[dim]No habits found[/dim]")
+            return
+
+        today = datetime.utcnow().date()
+        week_ago = datetime.utcnow() - timedelta(days=7)
+
+        for habit in habits:
+            # Count completions this week
+            week_count = session.query(HabitLog).filter(
+                HabitLog.habit_id == habit.id,
+                HabitLog.completed_at >= week_ago
+            ).count()
+
+            # Check if done today
+            today_done = session.query(HabitLog).filter(
+                HabitLog.habit_id == habit.id,
+                HabitLog.completed_at >= datetime.combine(today, datetime.min.time())
+            ).first()
+
+            status = "[green]✓[/green]" if today_done else "[dim]○[/dim]"
+            freq_label = {"daily": "d", "weekly": "w", "3x_week": "3x"}[habit.frequency]
+            console.print(f"{status} {habit.id}: {habit.name} ({freq_label}) [{week_count}/7d]")
+
+
+@habit.command(name="done")
+@click.argument("habit_id", type=int)
+@click.option("--notes", "-n", help="Optional notes")
+def habit_done(habit_id: int, notes: str | None):
+    """Log a habit completion.
+
+    Example: gv habit done 1
+    Example: gv habit done 1 -n "20 minutes"
+    """
+    from grove.db import get_session
+    from grove.models import Habit, HabitLog
+
+    with get_session() as session:
+        habit = session.query(Habit).filter(Habit.id == habit_id).first()
+        if not habit:
+            console.print(f"[red]Habit not found:[/red] {habit_id}")
+            return
+
+        log = HabitLog(habit_id=habit_id, notes=notes)
+        session.add(log)
+        console.print(f"[green]✓[/green] Logged: {habit.name}")
+
+
+@habit.command(name="stats")
+@click.argument("habit_id", type=int)
+def habit_stats(habit_id: int):
+    """Show statistics for a habit.
+
+    Example: gv habit stats 1
+    """
+    from datetime import datetime, timedelta
+    from grove.db import get_session
+    from grove.models import Habit, HabitLog
+
+    with get_session() as session:
+        habit = session.query(Habit).filter(Habit.id == habit_id).first()
+        if not habit:
+            console.print(f"[red]Habit not found:[/red] {habit_id}")
+            return
+
+        console.print(f"[bold]{habit.name}[/bold] ({habit.frequency})")
+        console.print()
+
+        # Get all logs
+        logs = session.query(HabitLog).filter(
+            HabitLog.habit_id == habit_id
+        ).order_by(HabitLog.completed_at.desc()).all()
+
+        total = len(logs)
+
+        # This week
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        this_week = len([l for l in logs if l.completed_at >= week_ago])
+
+        # This month
+        month_ago = datetime.utcnow() - timedelta(days=30)
+        this_month = len([l for l in logs if l.completed_at >= month_ago])
+
+        # Current streak
+        streak = 0
+        if logs:
+            today = datetime.utcnow().date()
+            check_date = today
+            log_dates = {l.completed_at.date() for l in logs}
+
+            while check_date in log_dates:
+                streak += 1
+                check_date -= timedelta(days=1)
+
+        console.print(f"[cyan]Total completions:[/cyan] {total}")
+        console.print(f"[cyan]This week:[/cyan] {this_week}")
+        console.print(f"[cyan]This month:[/cyan] {this_month}")
+        console.print(f"[cyan]Current streak:[/cyan] {streak} day(s)")
+
+        # Last 7 days visualization
+        console.print()
+        console.print("[bold]Last 7 days:[/bold]")
+        today = datetime.utcnow().date()
+        log_dates = {l.completed_at.date() for l in logs}
+        days = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            days.append("█" if d in log_dates else "░")
+        console.print(f"  {''.join(days)}")
+        console.print(f"  [dim]{''.join(['MTWTFSS'[(today - timedelta(days=6-i)).weekday()] for i in range(7)])}[/dim]")
+
+
+@habit.command(name="pause")
+@click.argument("habit_id", type=int)
+def habit_pause(habit_id: int):
+    """Pause a habit (mark inactive).
+
+    Example: gv habit pause 1
+    """
+    from grove.db import get_session
+    from grove.models import Habit
+
+    with get_session() as session:
+        habit = session.query(Habit).filter(Habit.id == habit_id).first()
+        if not habit:
+            console.print(f"[red]Habit not found:[/red] {habit_id}")
+            return
+
+        habit.active = False
+        console.print(f"[yellow]Paused:[/yellow] {habit.name}")
+
+
+@habit.command(name="resume")
+@click.argument("habit_id", type=int)
+def habit_resume(habit_id: int):
+    """Resume a paused habit.
+
+    Example: gv habit resume 1
+    """
+    from grove.db import get_session
+    from grove.models import Habit
+
+    with get_session() as session:
+        habit = session.query(Habit).filter(Habit.id == habit_id).first()
+        if not habit:
+            console.print(f"[red]Habit not found:[/red] {habit_id}")
+            return
+
+        habit.active = True
+        console.print(f"[green]Resumed:[/green] {habit.name}")
 
 
 if __name__ == "__main__":
