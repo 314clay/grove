@@ -1097,6 +1097,262 @@ def status(branch_id: int):
             console.print(f"[dim]Run 'gv beads sync {branch_id}' to synchronize[/dim]")
 
 
+@beads.command()
+@click.argument("branch_id", type=int)
+@click.option("--recursive", "-r", is_flag=True, help="Include beads on buds within branch")
+def hanging(branch_id: int, recursive: bool):
+    """Show beads hanging from a branch.
+
+    Lists all beads linked to a branch directly, and optionally beads
+    linked to buds within that branch.
+
+    Example: gv beads hanging 1
+    Example: gv beads hanging 1 --recursive
+    """
+    from grove.db import get_session
+    from grove.models import Branch, Bud, BeadLink
+
+    with get_session() as session:
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
+            return
+
+        console.print(f"[bold]{br.title}[/bold]")
+        console.print()
+
+        # Get beads directly on branch
+        branch_links = session.query(BeadLink).filter(
+            BeadLink.branch_id == branch_id
+        ).all()
+
+        if branch_links:
+            console.print("[cyan]Beads on branch:[/cyan]")
+            for link in branch_links:
+                console.print(f"  {link.bead_id} [{link.link_type}]")
+        else:
+            console.print("[dim]No beads directly on branch[/dim]")
+
+        # Also check legacy buds.beads_id for backward compatibility
+        legacy_buds = session.query(Bud).filter(
+            Bud.branch_id == branch_id,
+            Bud.beads_id.isnot(None)
+        ).all()
+
+        if legacy_buds:
+            console.print()
+            console.print("[cyan]Legacy bead links (via buds.beads_id):[/cyan]")
+            for bud in legacy_buds:
+                console.print(f"  {bud.beads_id} -> bud {bud.id}: {bud.title[:40]}")
+
+        bud_links = []
+        if recursive:
+            # Get beads on buds within this branch
+            bud_links = session.query(BeadLink).join(
+                Bud, BeadLink.bud_id == Bud.id
+            ).filter(
+                Bud.branch_id == branch_id
+            ).all()
+
+            if bud_links:
+                console.print()
+                console.print("[cyan]Beads on buds in this branch:[/cyan]")
+                for link in bud_links:
+                    bud = session.query(Bud).filter(Bud.id == link.bud_id).first()
+                    bud_title = bud.title[:30] if bud else "unknown"
+                    console.print(f"  {link.bead_id} [{link.link_type}] -> bud {link.bud_id}: {bud_title}")
+            else:
+                console.print()
+                console.print("[dim]No beads on buds in this branch[/dim]")
+
+        # Summary
+        total = len(branch_links) + len(bud_links) + len(legacy_buds)
+        console.print()
+        console.print(f"[bold]Total:[/bold] {total} bead(s)")
+
+
+# =============================================================================
+# INDIVIDUAL BEAD OPERATIONS
+# =============================================================================
+
+
+@main.group()
+def bead():
+    """Individual bead operations (hang, unhang, show)."""
+    pass
+
+
+@bead.command()
+@click.argument("bead_id")
+@click.option("--bud", "-b", "bud_id", type=int, help="Hang on bud ID")
+@click.option("--branch", "-B", "branch_id", type=int, help="Hang on branch ID")
+@click.option("--type", "-t", "link_type", default="tracks",
+              type=click.Choice(["tracks", "implements", "blocks"]))
+def hang(bead_id: str, bud_id: int | None, branch_id: int | None, link_type: str):
+    """Hang a bead on a branch or bud.
+
+    Links an external bead (from a beads repo) to a branch or bud.
+    The beads_repo is determined from the branch's beads_repo field.
+
+    Example: gv bead hang abc123 --bud 5
+    Example: gv bead hang def456 --branch 2 --type implements
+    """
+    from grove.db import get_session
+    from grove.models import Branch, Bud, BeadLink
+
+    # Validate exactly one target
+    if bud_id is None and branch_id is None:
+        console.print("[red]Error:[/red] Must specify either --bud or --branch")
+        return
+    if bud_id is not None and branch_id is not None:
+        console.print("[red]Error:[/red] Cannot specify both --bud and --branch")
+        return
+
+    with get_session() as session:
+        beads_repo = None
+        target_name = None
+
+        if branch_id is not None:
+            # Hanging on a branch
+            br = session.query(Branch).filter(Branch.id == branch_id).first()
+            if not br:
+                console.print(f"[red]Branch not found:[/red] {branch_id}")
+                return
+            if not br.beads_repo:
+                console.print(f"[red]Branch has no beads_repo linked.[/red]")
+                console.print(f"[dim]Run 'gv branch link {branch_id} /path/to/.beads' first[/dim]")
+                return
+            beads_repo = br.beads_repo
+            target_name = f"branch {branch_id}: {br.title}"
+
+            # Check for duplicate
+            existing = session.query(BeadLink).filter(
+                BeadLink.bead_id == bead_id,
+                BeadLink.branch_id == branch_id
+            ).first()
+            if existing:
+                console.print(f"[yellow]Bead already hung on this branch[/yellow]")
+                return
+
+        else:
+            # Hanging on a bud
+            bud = session.query(Bud).filter(Bud.id == bud_id).first()
+            if not bud:
+                console.print(f"[red]Bud not found:[/red] {bud_id}")
+                return
+
+            # Get beads_repo from bud's branch
+            if bud.branch_id:
+                br = session.query(Branch).filter(Branch.id == bud.branch_id).first()
+                if br and br.beads_repo:
+                    beads_repo = br.beads_repo
+
+            if not beads_repo:
+                console.print(f"[red]Cannot determine beads_repo for this bud.[/red]")
+                console.print("[dim]The bud's branch must have a beads_repo linked.[/dim]")
+                return
+
+            target_name = f"bud {bud_id}: {bud.title}"
+
+            # Check for duplicate
+            existing = session.query(BeadLink).filter(
+                BeadLink.bead_id == bead_id,
+                BeadLink.bud_id == bud_id
+            ).first()
+            if existing:
+                console.print(f"[yellow]Bead already hung on this bud[/yellow]")
+                return
+
+        # Create the link
+        link = BeadLink(
+            bead_id=bead_id,
+            bead_repo=beads_repo,
+            bud_id=bud_id,
+            branch_id=branch_id,
+            link_type=link_type,
+        )
+        session.add(link)
+        session.commit()
+
+        console.print(f"[green]Hung bead:[/green] {bead_id} [{link_type}] -> {target_name}")
+
+
+@bead.command()
+@click.argument("bead_id")
+@click.option("--bud", "-b", "bud_id", type=int, help="Unhang from specific bud")
+@click.option("--branch", "-B", "branch_id", type=int, help="Unhang from specific branch")
+def unhang(bead_id: str, bud_id: int | None, branch_id: int | None):
+    """Unhang a bead from a branch or bud.
+
+    If neither --bud nor --branch specified, removes all links for this bead.
+
+    Example: gv bead unhang abc123
+    Example: gv bead unhang abc123 --bud 5
+    """
+    from grove.db import get_session
+    from grove.models import BeadLink
+
+    with get_session() as session:
+        query = session.query(BeadLink).filter(BeadLink.bead_id == bead_id)
+
+        if bud_id is not None:
+            query = query.filter(BeadLink.bud_id == bud_id)
+        elif branch_id is not None:
+            query = query.filter(BeadLink.branch_id == branch_id)
+
+        links = query.all()
+
+        if not links:
+            console.print(f"[yellow]No links found for bead:[/yellow] {bead_id}")
+            return
+
+        count = len(links)
+        for link in links:
+            session.delete(link)
+        session.commit()
+
+        if bud_id is not None:
+            console.print(f"[green]Unhung:[/green] {bead_id} from bud {bud_id}")
+        elif branch_id is not None:
+            console.print(f"[green]Unhung:[/green] {bead_id} from branch {branch_id}")
+        else:
+            console.print(f"[green]Unhung:[/green] {bead_id} from {count} location(s)")
+
+
+@bead.command()
+@click.argument("bead_id")
+def show(bead_id: str):
+    """Show where a bead is hung.
+
+    Displays all branches and buds this bead is linked to.
+
+    Example: gv bead show abc123
+    """
+    from grove.db import get_session
+    from grove.models import Branch, Bud, BeadLink
+
+    with get_session() as session:
+        links = session.query(BeadLink).filter(BeadLink.bead_id == bead_id).all()
+
+        if not links:
+            console.print(f"[dim]Bead not hung anywhere:[/dim] {bead_id}")
+            return
+
+        console.print(f"[bold]Bead:[/bold] {bead_id}")
+        console.print()
+
+        for link in links:
+            if link.branch_id:
+                br = session.query(Branch).filter(Branch.id == link.branch_id).first()
+                target = f"branch {link.branch_id}: {br.title}" if br else f"branch {link.branch_id}"
+            else:
+                bud = session.query(Bud).filter(Bud.id == link.bud_id).first()
+                target = f"bud {link.bud_id}: {bud.title}" if bud else f"bud {link.bud_id}"
+
+            console.print(f"  [{link.link_type}] -> {target}")
+            console.print(f"    [dim]repo: {link.bead_repo}[/dim]")
+
+
 # =============================================================================
 # OVERVIEW
 # =============================================================================

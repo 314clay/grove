@@ -116,6 +116,7 @@ class Branch(Base):
     trunk: Mapped[Optional["Trunk"]] = relationship(back_populates="branches")
     grove: Mapped[Optional["Grove"]] = relationship(back_populates="branches")
     buds: Mapped[list["Bud"]] = relationship(back_populates="branch")
+    bead_links: Mapped[list["BeadLink"]] = relationship(back_populates="branch")
 
 
 class Bud(Base):
@@ -172,6 +173,7 @@ class Bud(Base):
         foreign_keys="BudDependency.depends_on_id",
         back_populates="depends_on"
     )
+    bead_links: Mapped[list["BeadLink"]] = relationship(back_populates="bud")
 
 
 class BudDependency(Base):
@@ -216,3 +218,24 @@ class HabitLog(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
     habit: Mapped["Habit"] = relationship(back_populates="logs")
+
+
+class BeadLink(Base):
+    """Links between beads and Grove entities (buds/branches).
+
+    Allows beads from external issue trackers to be "hung" on branches (for epics)
+    or buds (for task-level tracking).
+    """
+    __tablename__ = "bead_links"
+    __table_args__ = {"schema": "todos"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bead_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    bead_repo: Mapped[str] = mapped_column(String(512), nullable=False)
+    bud_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.buds.id"))
+    branch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.branches.id"))
+    link_type: Mapped[str] = mapped_column(String(20), default="tracks")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    bud: Mapped[Optional["Bud"]] = relationship(back_populates="bead_links")
+    branch: Mapped[Optional["Branch"]] = relationship(back_populates="bead_links")
