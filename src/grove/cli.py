@@ -663,7 +663,7 @@ def show(stem_id: int):
 
     with get_session() as session:
         br = session.query(Stem).filter(Stem.id == stem_id).first()
-        if not s:
+        if not br:
             console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
