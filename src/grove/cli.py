@@ -3,7 +3,7 @@
 Naming scheme:
 - Groves: Life domains
 - Trunks: Strategic initiatives
-- Branches: Projects
+- Stems: Projects
 - Buds: Tasks (status: seed → dormant → budding → bloomed/mulch)
 - Fruits: Key results (OKRs)
 - Seeds: Unprocessed buds (gv seeds command)
@@ -17,12 +17,12 @@ console = Console()
 
 
 def parse_item_ref(ref: str) -> tuple[str, int]:
-    """Parse item reference like 'b:45' or 'br:12' into (item_type, item_id).
+    """Parse item reference like 'b:45' or 's:12' into (item_type, item_id).
 
     Prefixes:
       g:  -> grove
       t:  -> trunk
-      br: -> branch
+      s:  -> stem
       b:  -> bud
 
     Raises click.BadParameter if invalid format.
@@ -30,13 +30,13 @@ def parse_item_ref(ref: str) -> tuple[str, int]:
     prefixes = {
         'g': 'grove',
         't': 'trunk',
-        'br': 'branch',
+        's': 'stem',
         'b': 'bud',
     }
 
     if ':' not in ref:
         raise click.BadParameter(
-            f"Invalid format '{ref}'. Use prefix:id (e.g., b:45, br:12, t:16, g:1)"
+            f"Invalid format '{ref}'. Use prefix:id (e.g., b:45, s:12, t:16, g:1)"
         )
 
     parts = ref.split(':', 1)
@@ -44,7 +44,7 @@ def parse_item_ref(ref: str) -> tuple[str, int]:
 
     if prefix not in prefixes:
         raise click.BadParameter(
-            f"Unknown prefix '{prefix}'. Use: g (grove), t (trunk), br (branch), b (bud)"
+            f"Unknown prefix '{prefix}'. Use: g (grove), t (trunk), s (stem), b (bud)"
         )
 
     try:
@@ -57,12 +57,12 @@ def parse_item_ref(ref: str) -> tuple[str, int]:
 
 def get_item_by_ref(session, item_type: str, item_id: int):
     """Get an item by type and ID. Returns (item, model_class) or (None, None)."""
-    from grove.models import Grove, Trunk, Branch, Bud
+    from grove.models import Grove, Trunk, Stem, Bud
 
     models = {
         'grove': Grove,
         'trunk': Trunk,
-        'branch': Branch,
+        'stem': Stem,
         'bud': Bud,
     }
 
@@ -96,10 +96,10 @@ def log_activity(session, item_type: str, item_id: int, event_type: str, content
 def main():
     """Grove - Botanical task management with hierarchical alignment.
 
-    Your work grows from seeds to blooming buds on branches,
+    Your work grows from seeds to blooming buds on stems,
     supported by trunks, all within your groves.
 
-    Commands for managing buds, branches, trunks, and groves.
+    Commands for managing buds, stems, trunks, and groves.
     """
     pass
 
@@ -111,16 +111,16 @@ def main():
 
 @main.command()
 @click.argument("title")
-@click.option("--branch", "-b", type=int, help="Plant on branch (project) ID")
+@click.option("--stem", "-b", type=int, help="Plant on stem (project) ID")
 @click.option("--priority", type=click.Choice(["urgent", "high", "medium", "low"]), default="medium", help="Bud priority")
 @click.option("--context", "-c", help="Context tag")
-def add(title: str, branch: int | None, priority: str, context: str | None):
+def add(title: str, stem: int | None, priority: str, context: str | None):
     """Plant a new seed (add to inbox).
 
     Seeds are raw captures that haven't been clarified yet.
     Process them with 'gv seeds' to decide what they become.
 
-    Example: gv add "Review PR" --branch=1 --priority=high
+    Example: gv add "Review PR" --stem=1 --priority=high
     """
     from grove.db import get_session
     from grove.models import Bud
@@ -128,7 +128,7 @@ def add(title: str, branch: int | None, priority: str, context: str | None):
     with get_session() as session:
         bud = Bud(
             title=title,
-            branch_id=branch,
+            stem_id=stem,
             priority=priority,
             context=context,
             status="seed",
@@ -143,7 +143,7 @@ def seeds():
     """Show unprocessed seeds (inbox items).
 
     Seeds are raw captures waiting to be clarified.
-    Decide: Is this a bud? A new branch? Or mulch?
+    Decide: Is this a bud? A new stem? Or mulch?
     """
     from grove.db import get_session
     from grove.models import Bud
@@ -492,15 +492,15 @@ def blocked():
 @main.command()
 @click.argument("bud_id", type=int)
 def why(bud_id: int):
-    """Trace a bud up through branch → trunk → grove.
+    """Trace a bud up through stem → trunk → grove.
 
     Shows why a bud exists by displaying its full hierarchy.
-    Buds can link directly to grove/trunk or via branch.
+    Buds can link directly to grove/trunk or via stem.
 
     Example: gv why 123
     """
     from grove.db import get_session
-    from grove.models import Bud, Branch, Trunk, Grove
+    from grove.models import Bud, Stem, Trunk, Grove
 
     with get_session() as session:
         bud = session.query(Bud).filter(Bud.id == bud_id).first()
@@ -513,24 +513,24 @@ def why(bud_id: int):
         console.print(f"  [dim]id: {bud.id} | status: {bud.status} | priority: {bud.priority}[/dim]")
 
         # Track what we've shown to avoid duplicates
-        shown_branch = False
+        shown_stem = False
         shown_trunk = False
         shown_grove = False
 
-        # Show branch if linked
-        if bud.branch_id:
-            branch = session.query(Branch).filter(Branch.id == bud.branch_id).first()
-            if branch:
-                shown_branch = True
+        # Show stem if linked
+        if bud.stem_id:
+            stem = session.query(Stem).filter(Stem.id == bud.stem_id).first()
+            if stem:
+                shown_stem = True
                 console.print()
-                console.print(f"  [bold yellow]↑ Branch:[/bold yellow] {branch.title}")
-                console.print(f"    [dim]id: {branch.id} | status: {branch.status}[/dim]")
-                if branch.done_when:
-                    console.print(f"    [dim]blooms when: {branch.done_when}[/dim]")
+                console.print(f"  [bold yellow]↑ Stem:[/bold yellow] {stem.title}")
+                console.print(f"    [dim]id: {stem.id} | status: {stem.status}[/dim]")
+                if stem.done_when:
+                    console.print(f"    [dim]blooms when: {stem.done_when}[/dim]")
 
-                # Show trunk via branch
-                if branch.trunk_id:
-                    trunk = session.query(Trunk).filter(Trunk.id == branch.trunk_id).first()
+                # Show trunk via stem
+                if stem.trunk_id:
+                    trunk = session.query(Trunk).filter(Trunk.id == stem.trunk_id).first()
                     if trunk:
                         shown_trunk = True
                         console.print()
@@ -551,7 +551,7 @@ def why(bud_id: int):
                                 if grove.description:
                                     console.print(f"        [dim]{grove.description}[/dim]")
 
-        # Show direct trunk link if not shown via branch
+        # Show direct trunk link if not shown via stem
         if bud.trunk_id and not shown_trunk:
             trunk = session.query(Trunk).filter(Trunk.id == bud.trunk_id).first()
             if trunk:
@@ -586,44 +586,44 @@ def why(bud_id: int):
                     console.print(f"    [dim]{grove.description}[/dim]")
 
         # If no links at all
-        if not bud.branch_id and not bud.trunk_id and not bud.grove_id:
+        if not bud.stem_id and not bud.trunk_id and not bud.grove_id:
             console.print()
-            console.print("[dim]This bud is not planted on any branch, trunk, or grove.[/dim]")
+            console.print("[dim]This bud is not planted on any stem, trunk, or grove.[/dim]")
 
         console.print()
 
 
 # =============================================================================
-# BRANCH (Project) MANAGEMENT
+# STEM (Project) MANAGEMENT
 # =============================================================================
 
 
 @main.group()
-def branch():
-    """Manage branches (projects)."""
+def stem():
+    """Manage stems (projects)."""
     pass
 
 
-@branch.command()
-@click.argument("branch_id", type=int)
+@stem.command()
+@click.argument("stem_id", type=int)
 @click.argument("beads_path")
-def link(branch_id: int, beads_path: str):
-    """Link a branch to a beads repository path.
+def link(stem_id: int, beads_path: str):
+    """Link a stem to a beads repository path.
 
-    Sets the beads_repo field on a branch, enabling beads integration
-    for tracking AI-native issues associated with this branch.
+    Sets the beads_repo field on a stem, enabling beads integration
+    for tracking AI-native issues associated with this stem.
 
-    Example: gv branch link 1 /path/to/.beads
-    Example: gv branch link 1 ../shared/.beads
+    Example: gv stem link 1 /path/to/.beads
+    Example: gv stem link 1 ../shared/.beads
     """
     import os
     from grove.db import get_session
-    from grove.models import Branch
+    from grove.models import Stem
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         # Resolve relative paths to absolute
@@ -635,40 +635,40 @@ def link(branch_id: int, beads_path: str):
         console.print(f"[green]Linked:[/green] {br.title} → {beads_path}")
 
 
-@branch.command(name="list")
-def list_branches():
-    """List all branches with their beads links."""
+@stem.command(name="list")
+def list_stems():
+    """List all stems with their beads links."""
     from grove.db import get_session
-    from grove.models import Branch
+    from grove.models import Stem
 
     with get_session() as session:
-        branches = session.query(Branch).order_by(Branch.title).all()
-        if not branches:
-            console.print("[dim]No branches[/dim]")
+        stems = session.query(Stem).order_by(Stem.title).all()
+        if not stems:
+            console.print("[dim]No stems[/dim]")
             return
 
-        console.print("[bold]Branches:[/bold]")
-        for br in branches:
+        console.print("[bold]Stems:[/bold]")
+        for br in stems:
             status_icon = "●" if br.status == "completed" else "○"
             beads_info = f" → {br.beads_repo}" if br.beads_repo else ""
             console.print(f"  {br.id}: {status_icon} {br.title}[dim]{beads_info}[/dim]")
 
 
-@branch.command()
-@click.argument("branch_id", type=int)
-def show(branch_id: int):
-    """Show branch details including beads link."""
+@stem.command()
+@click.argument("stem_id", type=int)
+def show(stem_id: int):
+    """Show stem details including beads link."""
     from grove.db import get_session
-    from grove.models import Branch, Bud
+    from grove.models import Stem, Bud
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         console.print()
-        console.print(f"[bold yellow]Branch:[/bold yellow] {br.title}")
+        console.print(f"[bold yellow]Stem:[/bold yellow] {br.title}")
         console.print(f"  [dim]id: {br.id} | status: {br.status} | priority: {br.priority}[/dim]")
         if br.description:
             console.print(f"  [dim]{br.description}[/dim]")
@@ -682,26 +682,26 @@ def show(branch_id: int):
             console.print("  [dim]beads: not linked[/dim]")
 
         # Show bud count
-        bud_count = session.query(Bud).filter(Bud.branch_id == br.id).count()
-        bloomed_count = session.query(Bud).filter(Bud.branch_id == br.id, Bud.status == "bloomed").count()
+        bud_count = session.query(Bud).filter(Bud.stem_id == br.id).count()
+        bloomed_count = session.query(Bud).filter(Bud.stem_id == br.id, Bud.status == "bloomed").count()
         console.print(f"  [dim]buds: {bloomed_count}/{bud_count} bloomed[/dim]")
         console.print()
 
 
-@branch.command(name="new")
+@stem.command(name="new")
 @click.argument("title")
 @click.option("--trunk", "-t", "trunk_id", type=int, help="Link to trunk ID")
 @click.option("--grove", "-g", "grove_id", type=int, help="Link to grove ID")
-@click.option("--description", "-d", help="Branch description")
+@click.option("--description", "-d", help="Stem description")
 @click.option("--done-when", help="Completion criteria")
-def branch_new(title: str, trunk_id: int | None, grove_id: int | None, description: str | None, done_when: str | None):
-    """Create a new branch (project).
+def stem_new(title: str, trunk_id: int | None, grove_id: int | None, description: str | None, done_when: str | None):
+    """Create a new stem (project).
 
-    Example: gv branch new "Auth System" --trunk=1
-    Example: gv branch new "Side Project" --grove=2
+    Example: gv stem new "Auth System" --trunk=1
+    Example: gv stem new "Side Project" --grove=2
     """
     from grove.db import get_session
-    from grove.models import Branch, Trunk, Grove
+    from grove.models import Stem, Trunk, Grove
 
     with get_session() as session:
         if trunk_id:
@@ -716,7 +716,7 @@ def branch_new(title: str, trunk_id: int | None, grove_id: int | None, descripti
                 console.print(f"[red]Grove not found:[/red] {grove_id}")
                 return
 
-        br = Branch(
+        br = Stem(
             title=title,
             trunk_id=trunk_id,
             grove_id=grove_id,
@@ -725,24 +725,24 @@ def branch_new(title: str, trunk_id: int | None, grove_id: int | None, descripti
         )
         session.add(br)
         session.commit()
-        console.print(f"[green]Created branch:[/green] {br.id}: {title}")
+        console.print(f"[green]Created stem:[/green] {br.id}: {title}")
 
 
-@branch.command()
-@click.argument("branch_id", type=int)
-def unlink(branch_id: int):
-    """Remove beads link from a branch."""
+@stem.command()
+@click.argument("stem_id", type=int)
+def unlink(stem_id: int):
+    """Remove beads link from a stem."""
     from grove.db import get_session
-    from grove.models import Branch
+    from grove.models import Stem
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         if not br.beads_repo:
-            console.print("[yellow]Branch not linked to beads[/yellow]")
+            console.print("[yellow]Stem not linked to beads[/yellow]")
             return
 
         old_path = br.beads_repo
@@ -763,14 +763,14 @@ def beads():
 
 
 @beads.command()
-@click.argument("branch_id", type=int)
+@click.argument("stem_id", type=int)
 @click.argument("bud_ids", nargs=-1, type=int)
 @click.option("--dry-run", is_flag=True, help="Show what would be pushed without creating issues")
-def push(branch_id: int, bud_ids: tuple, dry_run: bool):
+def push(stem_id: int, bud_ids: tuple, dry_run: bool):
     """Push buds to beads in the linked repository.
 
-    Exports buds from a branch as beads issues. If bud_ids are provided,
-    only those buds are pushed. Otherwise, all seed/budding buds in the branch
+    Exports buds from a stem as beads issues. If bud_ids are provided,
+    only those buds are pushed. Otherwise, all seed/budding buds in the stem
     are pushed.
 
     Example: gv beads push 1
@@ -779,16 +779,16 @@ def push(branch_id: int, bud_ids: tuple, dry_run: bool):
     import os
     import subprocess
     from grove.db import get_session
-    from grove.models import Branch, Bud
+    from grove.models import Stem, Bud
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         if not br.beads_repo:
-            console.print("[red]Branch not linked to beads.[/red] Use 'gv branch link' first.")
+            console.print("[red]Stem not linked to beads.[/red] Use 'gv stem link' first.")
             return
 
         # Verify beads path exists
@@ -801,16 +801,16 @@ def push(branch_id: int, bud_ids: tuple, dry_run: bool):
         if bud_ids:
             buds = session.query(Bud).filter(
                 Bud.id.in_(bud_ids),
-                Bud.branch_id == branch_id
+                Bud.stem_id == stem_id
             ).all()
             if len(buds) != len(bud_ids):
                 found_ids = {b.id for b in buds}
                 missing = [bid for bid in bud_ids if bid not in found_ids]
-                console.print(f"[yellow]Warning: Buds not found in branch: {missing}[/yellow]")
+                console.print(f"[yellow]Warning: Buds not found in stem: {missing}[/yellow]")
         else:
-            # Get all seed/budding buds in the branch
+            # Get all seed/budding buds in the stem
             buds = session.query(Bud).filter(
-                Bud.branch_id == branch_id,
+                Bud.stem_id == stem_id,
                 Bud.status.in_(["seed", "budding"])
             ).all()
 
@@ -882,13 +882,13 @@ def push(branch_id: int, bud_ids: tuple, dry_run: bool):
 
 
 @beads.command()
-@click.argument("branch_id", type=int)
+@click.argument("stem_id", type=int)
 @click.option("--dry-run", is_flag=True, help="Show what would be imported without creating buds")
 @click.option("--all", "import_all", is_flag=True, help="Import all beads, not just open ones")
-def pull(branch_id: int, dry_run: bool, import_all: bool):
+def pull(stem_id: int, dry_run: bool, import_all: bool):
     """Pull beads from linked repository as buds.
 
-    Imports open beads from the branch's linked beads repo as buds.
+    Imports open beads from the stem's linked beads repo as buds.
     Skips beads that have already been imported (matched by beads_id).
 
     Example: gv beads pull 1
@@ -896,7 +896,7 @@ def pull(branch_id: int, dry_run: bool, import_all: bool):
     """
     from datetime import datetime
     from grove.db import get_session
-    from grove.models import Branch, Bud
+    from grove.models import Stem, Bud
     from grove.beads import (
         resolve_beads_path,
         read_beads_jsonl,
@@ -906,13 +906,13 @@ def pull(branch_id: int, dry_run: bool, import_all: bool):
     )
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         if not br.beads_repo:
-            console.print("[red]Branch not linked to beads.[/red] Use 'gv branch link' first.")
+            console.print("[red]Stem not linked to beads.[/red] Use 'gv stem link' first.")
             return
 
         try:
@@ -932,7 +932,7 @@ def pull(branch_id: int, dry_run: bool, import_all: bool):
         # Get existing beads_ids to avoid duplicates
         existing_bead_ids = set(
             b.beads_id for b in session.query(Bud.beads_id).filter(
-                Bud.branch_id == branch_id,
+                Bud.stem_id == stem_id,
                 Bud.beads_id.isnot(None)
             ).all()
         )
@@ -954,7 +954,7 @@ def pull(branch_id: int, dry_run: bool, import_all: bool):
                 new_bud = Bud(
                     title=bead.title,
                     description=bead.description,
-                    branch_id=branch_id,
+                    stem_id=stem_id,
                     status=map_bead_status_to_bud_status(bead.status),
                     priority=map_bead_priority_to_importance(bead.priority),
                     beads_id=bead.id,
@@ -973,9 +973,9 @@ def pull(branch_id: int, dry_run: bool, import_all: bool):
 
 
 @beads.command()
-@click.argument("branch_id", type=int)
+@click.argument("stem_id", type=int)
 @click.option("--dry-run", is_flag=True, help="Show what would be synced without making changes")
-def sync(branch_id: int, dry_run: bool):
+def sync(stem_id: int, dry_run: bool):
     """Bidirectional sync between buds and beads.
 
     1. Pulls new beads as buds (like 'gv beads pull')
@@ -986,7 +986,7 @@ def sync(branch_id: int, dry_run: bool):
     """
     from datetime import datetime
     from grove.db import get_session
-    from grove.models import Branch, Bud
+    from grove.models import Stem, Bud
     from grove.beads import (
         resolve_beads_path,
         read_beads_jsonl,
@@ -996,13 +996,13 @@ def sync(branch_id: int, dry_run: bool):
     )
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         if not br.beads_repo:
-            console.print("[red]Branch not linked to beads.[/red] Use 'gv branch link' first.")
+            console.print("[red]Stem not linked to beads.[/red] Use 'gv stem link' first.")
             return
 
         try:
@@ -1015,13 +1015,13 @@ def sync(branch_id: int, dry_run: bool):
         beads_by_id = {b.id: b for b in all_beads}
         open_beads = filter_open_beads(all_beads)
 
-        console.print(f"[cyan]Syncing branch {branch_id} with:[/cyan] {beads_dir}")
+        console.print(f"[cyan]Syncing stem {stem_id} with:[/cyan] {beads_dir}")
         console.print()
 
         # Phase 1: Pull new beads
         console.print("[bold]Phase 1: Pull new beads[/bold]")
         existing_buds = session.query(Bud).filter(
-            Bud.branch_id == branch_id,
+            Bud.stem_id == stem_id,
             Bud.beads_id.isnot(None)
         ).all()
         existing_bead_ids = {b.beads_id for b in existing_buds}
@@ -1035,7 +1035,7 @@ def sync(branch_id: int, dry_run: bool):
                     new_bud = Bud(
                         title=bead.title,
                         description=bead.description,
-                        branch_id=branch_id,
+                        stem_id=stem_id,
                         status=map_bead_status_to_bud_status(bead.status),
                         priority=map_bead_priority_to_importance(bead.priority),
                         beads_id=bead.id,
@@ -1072,7 +1072,7 @@ def sync(branch_id: int, dry_run: bool):
         # Phase 3: Report buds without beads (candidates for push)
         console.print("[bold]Phase 3: Buds without beads (push candidates)[/bold]")
         unlinked_buds = session.query(Bud).filter(
-            Bud.branch_id == branch_id,
+            Bud.stem_id == stem_id,
             Bud.beads_id.is_(None),
             Bud.status.in_(["seed", "budding"])
         ).all()
@@ -1080,7 +1080,7 @@ def sync(branch_id: int, dry_run: bool):
         if unlinked_buds:
             for bud in unlinked_buds:
                 console.print(f"  [dim]Not in beads:[/dim] {bud.id}: {bud.title}")
-            console.print(f"\n  [dim]Run 'gv beads push {branch_id}' to export these[/dim]")
+            console.print(f"\n  [dim]Run 'gv beads push {stem_id}' to export these[/dim]")
         else:
             console.print("  [dim]All buds are linked to beads[/dim]")
 
@@ -1089,9 +1089,9 @@ def sync(branch_id: int, dry_run: bool):
 
 
 @beads.command()
-@click.argument("branch_id", type=int)
-def status(branch_id: int):
-    """Show beads sync status for a branch.
+@click.argument("stem_id", type=int)
+def status(stem_id: int):
+    """Show beads sync status for a stem.
 
     Displays sync health: linked buds, unlinked buds, stale syncs.
 
@@ -1099,13 +1099,13 @@ def status(branch_id: int):
     """
     from datetime import datetime, timedelta
     from grove.db import get_session
-    from grove.models import Branch, Bud
+    from grove.models import Stem, Bud
     from grove.beads import resolve_beads_path, read_beads_jsonl, filter_open_beads
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         console.print(f"[bold]{br.title}[/bold]")
@@ -1113,7 +1113,7 @@ def status(branch_id: int):
 
         if not br.beads_repo:
             console.print("[yellow]Not linked to beads[/yellow]")
-            console.print(f"[dim]Run 'gv branch link {branch_id} /path/to/.beads' to link[/dim]")
+            console.print(f"[dim]Run 'gv stem link {stem_id} /path/to/.beads' to link[/dim]")
             return
 
         console.print(f"[cyan]Beads repo:[/cyan] {br.beads_repo}")
@@ -1131,7 +1131,7 @@ def status(branch_id: int):
         console.print()
 
         # Get bud stats
-        all_buds = session.query(Bud).filter(Bud.branch_id == branch_id).all()
+        all_buds = session.query(Bud).filter(Bud.stem_id == stem_id).all()
         linked_buds = [b for b in all_buds if b.beads_id]
         unlinked_buds = [b for b in all_buds if not b.beads_id and b.status in ("seed", "budding")]
 
@@ -1176,48 +1176,48 @@ def status(branch_id: int):
 
         console.print()
         if unlinked_buds or unimported_beads:
-            console.print(f"[dim]Run 'gv beads sync {branch_id}' to synchronize[/dim]")
+            console.print(f"[dim]Run 'gv beads sync {stem_id}' to synchronize[/dim]")
 
 
 @beads.command()
-@click.argument("branch_id", type=int)
-@click.option("--recursive", "-r", is_flag=True, help="Include beads on buds within branch")
-def hanging(branch_id: int, recursive: bool):
-    """Show beads hanging from a branch.
+@click.argument("stem_id", type=int)
+@click.option("--recursive", "-r", is_flag=True, help="Include beads on buds within stem")
+def hanging(stem_id: int, recursive: bool):
+    """Show beads hanging from a stem.
 
-    Lists all beads linked to a branch directly, and optionally beads
-    linked to buds within that branch.
+    Lists all beads linked to a stem directly, and optionally beads
+    linked to buds within that stem.
 
     Example: gv beads hanging 1
     Example: gv beads hanging 1 --recursive
     """
     from grove.db import get_session
-    from grove.models import Branch, Bud, BeadLink
+    from grove.models import Stem, Bud, BeadLink
 
     with get_session() as session:
-        br = session.query(Branch).filter(Branch.id == branch_id).first()
-        if not br:
-            console.print(f"[red]Branch not found:[/red] {branch_id}")
+        br = session.query(Stem).filter(Stem.id == stem_id).first()
+        if not s:
+            console.print(f"[red]Stem not found:[/red] {stem_id}")
             return
 
         console.print(f"[bold]{br.title}[/bold]")
         console.print()
 
-        # Get beads directly on branch
-        branch_links = session.query(BeadLink).filter(
-            BeadLink.branch_id == branch_id
+        # Get beads directly on stem
+        stem_links = session.query(BeadLink).filter(
+            BeadLink.stem_id == stem_id
         ).all()
 
-        if branch_links:
-            console.print("[cyan]Beads on branch:[/cyan]")
-            for link in branch_links:
+        if stem_links:
+            console.print("[cyan]Beads on stem:[/cyan]")
+            for link in stem_links:
                 console.print(f"  {link.bead_id} [{link.link_type}]")
         else:
-            console.print("[dim]No beads directly on branch[/dim]")
+            console.print("[dim]No beads directly on stem[/dim]")
 
         # Also check legacy buds.beads_id for backward compatibility
         legacy_buds = session.query(Bud).filter(
-            Bud.branch_id == branch_id,
+            Bud.stem_id == stem_id,
             Bud.beads_id.isnot(None)
         ).all()
 
@@ -1229,26 +1229,26 @@ def hanging(branch_id: int, recursive: bool):
 
         bud_links = []
         if recursive:
-            # Get beads on buds within this branch
+            # Get beads on buds within this stem
             bud_links = session.query(BeadLink).join(
                 Bud, BeadLink.bud_id == Bud.id
             ).filter(
-                Bud.branch_id == branch_id
+                Bud.stem_id == stem_id
             ).all()
 
             if bud_links:
                 console.print()
-                console.print("[cyan]Beads on buds in this branch:[/cyan]")
+                console.print("[cyan]Beads on buds in this stem:[/cyan]")
                 for link in bud_links:
                     bud = session.query(Bud).filter(Bud.id == link.bud_id).first()
                     bud_title = bud.title[:30] if bud else "unknown"
                     console.print(f"  {link.bead_id} [{link.link_type}] -> bud {link.bud_id}: {bud_title}")
             else:
                 console.print()
-                console.print("[dim]No beads on buds in this branch[/dim]")
+                console.print("[dim]No beads on buds in this stem[/dim]")
 
         # Summary
-        total = len(branch_links) + len(bud_links) + len(legacy_buds)
+        total = len(stem_links) + len(bud_links) + len(legacy_buds)
         console.print()
         console.print(f"[bold]Total:[/bold] {total} bead(s)")
 
@@ -1267,53 +1267,53 @@ def bead():
 @bead.command()
 @click.argument("bead_id")
 @click.option("--bud", "-b", "bud_id", type=int, help="Hang on bud ID")
-@click.option("--branch", "-B", "branch_id", type=int, help="Hang on branch ID")
+@click.option("--stem", "-B", "stem_id", type=int, help="Hang on stem ID")
 @click.option("--type", "-t", "link_type", default="tracks",
               type=click.Choice(["tracks", "implements", "blocks"]))
-def hang(bead_id: str, bud_id: int | None, branch_id: int | None, link_type: str):
-    """Hang a bead on a branch or bud.
+def hang(bead_id: str, bud_id: int | None, stem_id: int | None, link_type: str):
+    """Hang a bead on a stem or bud.
 
-    Links an external bead (from a beads repo) to a branch or bud.
-    The beads_repo is determined from the branch's beads_repo field.
+    Links an external bead (from a beads repo) to a stem or bud.
+    The beads_repo is determined from the stem's beads_repo field.
 
     Example: gv bead hang abc123 --bud 5
-    Example: gv bead hang def456 --branch 2 --type implements
+    Example: gv bead hang def456 --stem 2 --type implements
     """
     from grove.db import get_session
-    from grove.models import Branch, Bud, BeadLink
+    from grove.models import Stem, Bud, BeadLink
 
     # Validate exactly one target
-    if bud_id is None and branch_id is None:
-        console.print("[red]Error:[/red] Must specify either --bud or --branch")
+    if bud_id is None and stem_id is None:
+        console.print("[red]Error:[/red] Must specify either --bud or --stem")
         return
-    if bud_id is not None and branch_id is not None:
-        console.print("[red]Error:[/red] Cannot specify both --bud and --branch")
+    if bud_id is not None and stem_id is not None:
+        console.print("[red]Error:[/red] Cannot specify both --bud and --stem")
         return
 
     with get_session() as session:
         beads_repo = None
         target_name = None
 
-        if branch_id is not None:
-            # Hanging on a branch
-            br = session.query(Branch).filter(Branch.id == branch_id).first()
-            if not br:
-                console.print(f"[red]Branch not found:[/red] {branch_id}")
+        if stem_id is not None:
+            # Hanging on a stem
+            br = session.query(Stem).filter(Stem.id == stem_id).first()
+            if not s:
+                console.print(f"[red]Stem not found:[/red] {stem_id}")
                 return
             if not br.beads_repo:
-                console.print(f"[red]Branch has no beads_repo linked.[/red]")
-                console.print(f"[dim]Run 'gv branch link {branch_id} /path/to/.beads' first[/dim]")
+                console.print(f"[red]Stem has no beads_repo linked.[/red]")
+                console.print(f"[dim]Run 'gv stem link {stem_id} /path/to/.beads' first[/dim]")
                 return
             beads_repo = br.beads_repo
-            target_name = f"branch {branch_id}: {br.title}"
+            target_name = f"stem {stem_id}: {br.title}"
 
             # Check for duplicate
             existing = session.query(BeadLink).filter(
                 BeadLink.bead_id == bead_id,
-                BeadLink.branch_id == branch_id
+                BeadLink.stem_id == stem_id
             ).first()
             if existing:
-                console.print(f"[yellow]Bead already hung on this branch[/yellow]")
+                console.print(f"[yellow]Bead already hung on this stem[/yellow]")
                 return
 
         else:
@@ -1323,15 +1323,15 @@ def hang(bead_id: str, bud_id: int | None, branch_id: int | None, link_type: str
                 console.print(f"[red]Bud not found:[/red] {bud_id}")
                 return
 
-            # Get beads_repo from bud's branch
-            if bud.branch_id:
-                br = session.query(Branch).filter(Branch.id == bud.branch_id).first()
+            # Get beads_repo from bud's stem
+            if bud.stem_id:
+                br = session.query(Stem).filter(Stem.id == bud.stem_id).first()
                 if br and br.beads_repo:
                     beads_repo = br.beads_repo
 
             if not beads_repo:
                 console.print(f"[red]Cannot determine beads_repo for this bud.[/red]")
-                console.print("[dim]The bud's branch must have a beads_repo linked.[/dim]")
+                console.print("[dim]The bud's stem must have a beads_repo linked.[/dim]")
                 return
 
             target_name = f"bud {bud_id}: {bud.title}"
@@ -1350,7 +1350,7 @@ def hang(bead_id: str, bud_id: int | None, branch_id: int | None, link_type: str
             bead_id=bead_id,
             bead_repo=beads_repo,
             bud_id=bud_id,
-            branch_id=branch_id,
+            stem_id=stem_id,
             link_type=link_type,
         )
         session.add(link)
@@ -1362,11 +1362,11 @@ def hang(bead_id: str, bud_id: int | None, branch_id: int | None, link_type: str
 @bead.command()
 @click.argument("bead_id")
 @click.option("--bud", "-b", "bud_id", type=int, help="Unhang from specific bud")
-@click.option("--branch", "-B", "branch_id", type=int, help="Unhang from specific branch")
-def unhang(bead_id: str, bud_id: int | None, branch_id: int | None):
-    """Unhang a bead from a branch or bud.
+@click.option("--stem", "-B", "stem_id", type=int, help="Unhang from specific stem")
+def unhang(bead_id: str, bud_id: int | None, stem_id: int | None):
+    """Unhang a bead from a stem or bud.
 
-    If neither --bud nor --branch specified, removes all links for this bead.
+    If neither --bud nor --stem specified, removes all links for this bead.
 
     Example: gv bead unhang abc123
     Example: gv bead unhang abc123 --bud 5
@@ -1379,8 +1379,8 @@ def unhang(bead_id: str, bud_id: int | None, branch_id: int | None):
 
         if bud_id is not None:
             query = query.filter(BeadLink.bud_id == bud_id)
-        elif branch_id is not None:
-            query = query.filter(BeadLink.branch_id == branch_id)
+        elif stem_id is not None:
+            query = query.filter(BeadLink.stem_id == stem_id)
 
         links = query.all()
 
@@ -1395,8 +1395,8 @@ def unhang(bead_id: str, bud_id: int | None, branch_id: int | None):
 
         if bud_id is not None:
             console.print(f"[green]Unhung:[/green] {bead_id} from bud {bud_id}")
-        elif branch_id is not None:
-            console.print(f"[green]Unhung:[/green] {bead_id} from branch {branch_id}")
+        elif stem_id is not None:
+            console.print(f"[green]Unhung:[/green] {bead_id} from stem {stem_id}")
         else:
             console.print(f"[green]Unhung:[/green] {bead_id} from {count} location(s)")
 
@@ -1406,12 +1406,12 @@ def unhang(bead_id: str, bud_id: int | None, branch_id: int | None):
 def show(bead_id: str):
     """Show where a bead is hung.
 
-    Displays all branches and buds this bead is linked to.
+    Displays all stems and buds this bead is linked to.
 
     Example: gv bead show abc123
     """
     from grove.db import get_session
-    from grove.models import Branch, Bud, BeadLink
+    from grove.models import Stem, Bud, BeadLink
 
     with get_session() as session:
         links = session.query(BeadLink).filter(BeadLink.bead_id == bead_id).all()
@@ -1424,9 +1424,9 @@ def show(bead_id: str):
         console.print()
 
         for link in links:
-            if link.branch_id:
-                br = session.query(Branch).filter(Branch.id == link.branch_id).first()
-                target = f"branch {link.branch_id}: {br.title}" if br else f"branch {link.branch_id}"
+            if link.stem_id:
+                br = session.query(Stem).filter(Stem.id == link.stem_id).first()
+                target = f"stem {link.stem_id}: {br.title}" if br else f"stem {link.stem_id}"
             else:
                 bud = session.query(Bud).filter(Bud.id == link.bud_id).first()
                 target = f"bud {link.bud_id}: {bud.title}" if bud else f"bud {link.bud_id}"
@@ -1444,12 +1444,12 @@ def show(bead_id: str):
 def overview():
     """Show full hierarchy tree with counts and progress.
 
-    Displays all groves, trunks, branches, and bud counts.
+    Displays all groves, trunks, stems, and bud counts.
 
     Example: gv overview
     """
     from grove.db import get_session
-    from grove.models import Grove, Trunk, Branch, Bud
+    from grove.models import Grove, Trunk, Stem, Bud
 
     with get_session() as session:
         # Get all groves
@@ -1460,14 +1460,14 @@ def overview():
             Trunk.grove_id.is_(None)
         ).order_by(Trunk.title).all()
 
-        # Get orphan branches (no trunk)
-        orphan_branches = session.query(Branch).filter(
-            Branch.trunk_id.is_(None)
-        ).order_by(Branch.title).all()
+        # Get orphan stems (no trunk)
+        orphan_stems = session.query(Stem).filter(
+            Stem.trunk_id.is_(None)
+        ).order_by(Stem.title).all()
 
-        # Get orphan buds (no branch)
+        # Get orphan buds (no stem)
         orphan_buds = session.query(Bud).filter(
-            Bud.branch_id.is_(None),
+            Bud.stem_id.is_(None),
             Bud.status != "bloomed"
         ).all()
 
@@ -1484,9 +1484,9 @@ def overview():
             grove_bloomed_count = 0
 
             for trunk in trunks:
-                branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
-                for br in branches:
-                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).all()
+                for br in stems:
+                    buds = session.query(Bud).filter(Bud.stem_id == br.id).all()
                     grove_bud_count += len(buds)
                     grove_bloomed_count += len([b for b in buds if b.status == "bloomed"])
 
@@ -1495,13 +1495,13 @@ def overview():
             console.print(f"[bold green]{icon} {grove.name}[/bold green] [{progress}]")
 
             for trunk in trunks:
-                branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
+                stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).all()
 
                 # Count buds for this trunk
                 trunk_bud_count = 0
                 trunk_bloomed_count = 0
-                for br in branches:
-                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                for br in stems:
+                    buds = session.query(Bud).filter(Bud.stem_id == br.id).all()
                     trunk_bud_count += len(buds)
                     trunk_bloomed_count += len([b for b in buds if b.status == "bloomed"])
 
@@ -1509,8 +1509,8 @@ def overview():
                 status_icon = "○" if trunk.status == "active" else "●"
                 console.print(f"  {status_icon} [magenta]{trunk.title}[/magenta] [{progress}]")
 
-                for br in branches:
-                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                for br in stems:
+                    buds = session.query(Bud).filter(Bud.stem_id == br.id).all()
                     bloomed_count = len([b for b in buds if b.status == "bloomed"])
                     total_count = len(buds)
                     progress = f"{bloomed_count}/{total_count}" if total_count > 0 else "0/0"
@@ -1522,21 +1522,21 @@ def overview():
             console.print()
             console.print("[bold dim]Unrooted Trunks[/bold dim]")
             for trunk in orphan_trunks:
-                branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
+                stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).all()
                 trunk_bud_count = 0
                 trunk_bloomed_count = 0
-                for br in branches:
-                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                for br in stems:
+                    buds = session.query(Bud).filter(Bud.stem_id == br.id).all()
                     trunk_bud_count += len(buds)
                     trunk_bloomed_count += len([b for b in buds if b.status == "bloomed"])
                 progress = f"{trunk_bloomed_count}/{trunk_bud_count}" if trunk_bud_count > 0 else "0/0"
                 console.print(f"  ○ [magenta]{trunk.title}[/magenta] [{progress}]")
 
-        if orphan_branches:
+        if orphan_stems:
             console.print()
-            console.print("[bold dim]Floating Branches[/bold dim]")
-            for br in orphan_branches:
-                buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+            console.print("[bold dim]Floating Stems[/bold dim]")
+            for br in orphan_stems:
+                buds = session.query(Bud).filter(Bud.stem_id == br.id).all()
                 bloomed_count = len([b for b in buds if b.status == "bloomed"])
                 total_count = len(buds)
                 progress = f"{bloomed_count}/{total_count}" if total_count > 0 else "0/0"
@@ -1578,14 +1578,14 @@ def review():
     1. Process seeds (inbox)
     2. Review stale buds
     3. Check blocked work
-    4. Review branch progress
+    4. Review stem progress
     5. Celebrate blooms
 
     Example: gv review
     """
     from datetime import datetime, timedelta
     from grove.db import get_session
-    from grove.models import Bud, Branch, Grove
+    from grove.models import Bud, Stem, Grove
 
     with get_session() as session:
         console.print()
@@ -1645,12 +1645,12 @@ def review():
             console.print("   [green]✓ No blocked buds[/green]")
         console.print()
 
-        # Step 4: Branch progress
-        console.print("[bold]4. Branch Progress[/bold]")
-        branches = session.query(Branch).filter(Branch.status == "active").all()
-        if branches:
-            for br in branches[:5]:
-                buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+        # Step 4: Stem progress
+        console.print("[bold]4. Stem Progress[/bold]")
+        stems = session.query(Stem).filter(Stem.status == "active").all()
+        if stems:
+            for br in stems[:5]:
+                buds = session.query(Bud).filter(Bud.stem_id == br.id).all()
                 total = len(buds)
                 bloomed = len([b for b in buds if b.status == "bloomed"])
                 budding = len([b for b in buds if b.status == "budding"])
@@ -1661,10 +1661,10 @@ def review():
                     console.print(f"   [dim]{bloomed} bloomed, {budding} budding, {total - bloomed - budding} other[/dim]")
                 else:
                     console.print(f"   [dim]{br.title} (no buds)[/dim]")
-            if len(branches) > 5:
-                console.print(f"   ... and {len(branches) - 5} more branches")
+            if len(stems) > 5:
+                console.print(f"   ... and {len(stems) - 5} more stems")
         else:
-            console.print("   [dim]No active branches[/dim]")
+            console.print("   [dim]No active stems[/dim]")
         console.print()
 
         # Step 5: Recent blooms
@@ -2018,12 +2018,12 @@ def trunk_list(grove_id: int | None, show_all: bool):
 @trunk.command(name="show")
 @click.argument("trunk_id", type=int)
 def trunk_show(trunk_id: int):
-    """Show trunk details with branches/buds count.
+    """Show trunk details with stems/buds count.
 
     Example: gv trunk show 1
     """
     from grove.db import get_session
-    from grove.models import Trunk, Grove, Branch, Bud
+    from grove.models import Trunk, Grove, Stem, Bud
 
     with get_session() as session:
         trunk = session.query(Trunk).filter(Trunk.id == trunk_id).first()
@@ -2052,45 +2052,45 @@ def trunk_show(trunk_id: int):
                 console.print()
                 console.print(f"  [bold green]Grove:[/bold green] {icon} {grove.name}")
 
-        # Count branches under this trunk
-        branch_count = session.query(Branch).filter(Branch.trunk_id == trunk.id).count()
-        branch_done = session.query(Branch).filter(
-            Branch.trunk_id == trunk.id,
-            Branch.status == "completed"
+        # Count stems under this trunk
+        stem_count = session.query(Stem).filter(Stem.trunk_id == trunk.id).count()
+        stem_done = session.query(Stem).filter(
+            Stem.trunk_id == trunk.id,
+            Stem.status == "completed"
         ).count()
 
-        # Count buds under this trunk (direct + via branches)
+        # Count buds under this trunk (direct + via stems)
         direct_bud_count = session.query(Bud).filter(Bud.trunk_id == trunk.id).count()
         direct_bud_bloomed = session.query(Bud).filter(
             Bud.trunk_id == trunk.id,
             Bud.status == "bloomed"
         ).count()
 
-        # Buds via branches
-        branch_ids = [b.id for b in session.query(Branch.id).filter(Branch.trunk_id == trunk.id).all()]
-        branch_bud_count = session.query(Bud).filter(Bud.branch_id.in_(branch_ids)).count() if branch_ids else 0
-        branch_bud_bloomed = session.query(Bud).filter(
-            Bud.branch_id.in_(branch_ids),
+        # Buds via stems
+        stem_ids = [b.id for b in session.query(Stem.id).filter(Stem.trunk_id == trunk.id).all()]
+        stem_bud_count = session.query(Bud).filter(Bud.stem_id.in_(stem_ids)).count() if stem_ids else 0
+        stem_bud_bloomed = session.query(Bud).filter(
+            Bud.stem_id.in_(stem_ids),
             Bud.status == "bloomed"
-        ).count() if branch_ids else 0
+        ).count() if stem_ids else 0
 
-        total_buds = direct_bud_count + branch_bud_count
-        total_bloomed = direct_bud_bloomed + branch_bud_bloomed
+        total_buds = direct_bud_count + stem_bud_count
+        total_bloomed = direct_bud_bloomed + stem_bud_bloomed
 
         console.print()
-        console.print(f"  [cyan]Branches:[/cyan] {branch_done}/{branch_count}")
-        console.print(f"  [cyan]Buds:[/cyan] {total_bloomed}/{total_buds} ({direct_bud_count} direct, {branch_bud_count} via branches)")
+        console.print(f"  [cyan]Stems:[/cyan] {stem_done}/{stem_count}")
+        console.print(f"  [cyan]Buds:[/cyan] {total_bloomed}/{total_buds} ({direct_bud_count} direct, {stem_bud_count} via stems)")
 
-        # List branches if any
-        if branch_count > 0:
+        # List stems if any
+        if stem_count > 0:
             console.print()
-            console.print("  [bold]Branches:[/bold]")
-            branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).order_by(Branch.title).all()
-            for br in branches[:10]:
+            console.print("  [bold]Stems:[/bold]")
+            stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).order_by(Stem.title).all()
+            for br in stems[:10]:
                 status_icon = "●" if br.status == "completed" else "○"
                 console.print(f"    {status_icon} {br.id}: {br.title}")
-            if branch_count > 10:
-                console.print(f"    [dim]... and {branch_count - 10} more[/dim]")
+            if stem_count > 10:
+                console.print(f"    [dim]... and {stem_count - 10} more[/dim]")
 
         console.print()
 
@@ -2235,7 +2235,7 @@ def grove_list(show_all: bool):
             # Count trunks
             trunk_count = session.query(Trunk).filter(Trunk.grove_id == g.id).count()
 
-            # Count buds (direct and via trunks/branches)
+            # Count buds (direct and via trunks/stems)
             direct_buds = session.query(Bud).filter(Bud.grove_id == g.id).count()
 
             console.print(f"  {g.id}: {icon} {g.name}{status} [{trunk_count} trunks, {direct_buds} direct buds]")
@@ -2251,7 +2251,7 @@ def grove_show(grove_id: int):
     Example: gv grove show 1
     """
     from grove.db import get_session
-    from grove.models import Grove, Trunk, Branch, Bud
+    from grove.models import Grove, Trunk, Stem, Bud
 
     with get_session() as session:
         g = session.query(Grove).filter(Grove.id == grove_id).first()
@@ -2278,7 +2278,7 @@ def grove_show(grove_id: int):
         direct_buds = session.query(Bud).filter(Bud.grove_id == g.id).count()
         direct_bloomed = session.query(Bud).filter(Bud.grove_id == g.id, Bud.status == "bloomed").count()
 
-        # Buds via trunks and branches
+        # Buds via trunks and stems
         total_buds = direct_buds
         total_bloomed = direct_bloomed
         for trunk in trunks:
@@ -2288,25 +2288,25 @@ def grove_show(grove_id: int):
             total_buds += trunk_buds
             total_bloomed += trunk_bloomed
 
-            # Buds via branches
-            branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
-            for br in branches:
-                br_buds = session.query(Bud).filter(Bud.branch_id == br.id).count()
-                br_bloomed = session.query(Bud).filter(Bud.branch_id == br.id, Bud.status == "bloomed").count()
+            # Buds via stems
+            stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).all()
+            for br in stems:
+                br_buds = session.query(Bud).filter(Bud.stem_id == br.id).count()
+                br_bloomed = session.query(Bud).filter(Bud.stem_id == br.id, Bud.status == "bloomed").count()
                 total_buds += br_buds
                 total_bloomed += br_bloomed
 
-        # Direct branches under grove
-        direct_branches = session.query(Branch).filter(Branch.grove_id == g.id).all()
-        for br in direct_branches:
-            br_buds = session.query(Bud).filter(Bud.branch_id == br.id).count()
-            br_bloomed = session.query(Bud).filter(Bud.branch_id == br.id, Bud.status == "bloomed").count()
+        # Direct stems under grove
+        direct_stems = session.query(Stem).filter(Stem.grove_id == g.id).all()
+        for br in direct_stems:
+            br_buds = session.query(Bud).filter(Bud.stem_id == br.id).count()
+            br_bloomed = session.query(Bud).filter(Bud.stem_id == br.id, Bud.status == "bloomed").count()
             total_buds += br_buds
             total_bloomed += br_bloomed
 
         console.print("[bold]Statistics[/bold]")
         console.print(f"  Trunks: {len(trunks)}")
-        console.print(f"  Direct branches: {len(direct_branches)}")
+        console.print(f"  Direct stems: {len(direct_stems)}")
         console.print(f"  Total buds: {total_bloomed}/{total_buds} bloomed")
         console.print()
 
@@ -2324,7 +2324,7 @@ def grove_archive(grove_id: int):
     """Archive a grove (soft delete).
 
     Archived groves won't show in 'gv grove list' but can be viewed with --all.
-    This does NOT delete trunks, branches, or buds under the grove.
+    This does NOT delete trunks, stems, or buds under the grove.
 
     Example: gv grove archive 1
     """
@@ -2364,10 +2364,10 @@ def _get_session_id() -> str | None:
 def log_entry(ref: str, message: str):
     """Append a log entry to any item's activity log.
 
-    Uses type prefixes: g:1 (grove), t:5 (trunk), br:12 (branch), b:45 (bud)
+    Uses type prefixes: g:1 (grove), t:5 (trunk), s:12 (stem), b:45 (bud)
 
     Example: gv log b:45 "Started working on authentication"
-    Example: gv log br:12 "Blocked on API design decision"
+    Example: gv log s:12 "Blocked on API design decision"
     """
     from grove.db import get_session
     from grove.models import ActivityLog
@@ -2409,7 +2409,7 @@ def log_entry(ref: str, message: str):
 def ref(ref: str, value: str, note: bool, is_file: bool, url: bool, label: str | None):
     """Add a structured reference to any item.
 
-    Uses type prefixes: g:1 (grove), t:5 (trunk), br:12 (branch), b:45 (bud)
+    Uses type prefixes: g:1 (grove), t:5 (trunk), s:12 (stem), b:45 (bud)
 
     Auto-detects type if not specified:
     - [[Note Name]] -> note
@@ -2417,7 +2417,7 @@ def ref(ref: str, value: str, note: bool, is_file: bool, url: bool, label: str |
     - http:// or https:// -> url
 
     Example: gv ref b:45 "[[Project Notes]]"
-    Example: gv ref br:12 --file ~/code/project/README.md
+    Example: gv ref s:12 --file ~/code/project/README.md
     Example: gv ref t:3 --url https://github.com/org/repo --label "Main repo"
     """
     from grove.db import get_session
@@ -2488,10 +2488,10 @@ def ref(ref: str, value: str, note: bool, is_file: bool, url: bool, label: str |
 def activity(ref: str, since: str | None, limit: int):
     """Show activity timeline for any item.
 
-    Uses type prefixes: g:1 (grove), t:5 (trunk), br:12 (branch), b:45 (bud)
+    Uses type prefixes: g:1 (grove), t:5 (trunk), s:12 (stem), b:45 (bud)
 
     Example: gv activity b:45
-    Example: gv activity br:12 --since "2 days ago"
+    Example: gv activity s:12 --since "2 days ago"
     Example: gv activity t:3 -n 50
     """
     from datetime import datetime, timedelta
@@ -2602,18 +2602,18 @@ def _format_relative_time(dt) -> str:
 def context(ref: str, peek: bool, brief: bool):
     """Show full context for an item with temporal awareness.
 
-    Uses type prefixes: g:1 (grove), t:16 (trunk), br:12 (branch), b:45 (bud)
+    Uses type prefixes: g:1 (grove), t:16 (trunk), s:12 (stem), b:45 (bud)
 
     Shows item details, hierarchy, refs, and recent activity.
     Updates last_checked_at unless --peek is used.
 
     Example: gv context b:45
-    Example: gv context br:12 --brief
+    Example: gv context s:12 --brief
     Example: gv context t:16 --peek
     """
     from datetime import datetime, timedelta
     from grove.db import get_session
-    from grove.models import Grove, Trunk, Branch, Bud, ActivityLog, Ref
+    from grove.models import Grove, Trunk, Stem, Bud, ActivityLog, Ref
 
     try:
         item_type, item_id = parse_item_ref(ref)
@@ -2665,7 +2665,7 @@ def context(ref: str, peek: bool, brief: bool):
 
             # Header
             title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
-            icon = {'grove': '🌳', 'trunk': '🪵', 'branch': '🌿', 'bud': '🌱'}.get(item_type, '')
+            icon = {'grove': '🌳', 'trunk': '🪵', 'stem': '🌿', 'bud': '🌱'}.get(item_type, '')
             console.print(f"[bold]{icon} {item_type.title()}:[/bold] {title}")
             console.print(f"  [dim]id: {item_id}[/dim]", end="")
 
@@ -2701,12 +2701,12 @@ def context(ref: str, peek: bool, brief: bool):
             if item_type == 'bud':
                 console.print()
                 console.print("[bold]Hierarchy[/bold]")
-                if item.branch_id:
-                    branch = session.query(Branch).filter(Branch.id == item.branch_id).first()
-                    if branch:
-                        console.print(f"  ↑ Branch: {branch.title} (br:{branch.id})")
-                        if branch.trunk_id:
-                            trunk = session.query(Trunk).filter(Trunk.id == branch.trunk_id).first()
+                if item.stem_id:
+                    stem = session.query(Stem).filter(Stem.id == item.stem_id).first()
+                    if stem:
+                        console.print(f"  ↑ Stem: {stem.title} (s:{stem.id})")
+                        if stem.trunk_id:
+                            trunk = session.query(Trunk).filter(Trunk.id == stem.trunk_id).first()
                             if trunk:
                                 console.print(f"    ↑ Trunk: {trunk.title} (t:{trunk.id})")
                 elif item.trunk_id:
@@ -2714,14 +2714,14 @@ def context(ref: str, peek: bool, brief: bool):
                     if trunk:
                         console.print(f"  ↑ Trunk: {trunk.title} (t:{trunk.id})")
 
-            elif item_type == 'branch':
+            elif item_type == 'stem':
                 console.print()
                 console.print("[bold]Hierarchy[/bold]")
                 if item.trunk_id:
                     trunk = session.query(Trunk).filter(Trunk.id == item.trunk_id).first()
                     if trunk:
                         console.print(f"  ↑ Trunk: {trunk.title} (t:{trunk.id})")
-                bud_count = session.query(Bud).filter(Bud.branch_id == item_id).count()
+                bud_count = session.query(Bud).filter(Bud.stem_id == item_id).count()
                 console.print(f"  ↓ Buds: {bud_count}")
 
             elif item_type == 'trunk':
@@ -2732,8 +2732,8 @@ def context(ref: str, peek: bool, brief: bool):
                     if grove:
                         icon = grove.icon or '🌳'
                         console.print(f"  ↑ Grove: {icon} {grove.name} (g:{grove.id})")
-                branch_count = session.query(Branch).filter(Branch.trunk_id == item_id).count()
-                console.print(f"  ↓ Branches: {branch_count}")
+                stem_count = session.query(Stem).filter(Stem.trunk_id == item_id).count()
+                console.print(f"  ↓ Stems: {stem_count}")
 
             # Recent activity
             recent = session.query(ActivityLog).filter(
@@ -2840,6 +2840,1146 @@ def now_alias():
         console.print("[bold]Ready to bloom:[/bold]")
         for bud in buds:
             console.print(f"  {bud.id}: {bud.title}")
+
+
+# =============================================================================
+# ROOTS - Source materials underlying your notes
+# =============================================================================
+
+
+@main.group()
+def root():
+    """Manage roots (source materials underlying your notes).
+
+    Roots are quotes, transcripts, or other source materials that can be
+    linked to multiple buds, stems, trunks, or groves.
+    """
+    pass
+
+
+@root.command("new")
+@click.argument("content")
+@click.option("--label", "-l", help="Short label for the root")
+@click.option("--type", "source_type", default="quote",
+              type=click.Choice(["quote", "transcript", "session", "note"]),
+              help="Type of source material")
+def root_new(content: str, label: str | None, source_type: str):
+    """Create a new root from a quote or source material.
+
+    Example: gv root new "The best way to predict the future is to invent it."
+    Example: gv root new "Meeting transcript..." --type transcript --label "Q4 Planning"
+    """
+    import os
+    from grove.db import get_session
+    from grove.models import Root
+
+    session_id = os.environ.get('CLAUDE_SESSION_ID')
+
+    with get_session() as session:
+        root_obj = Root(
+            content=content,
+            source_type=source_type,
+            label=label,
+            session_id=session_id,
+        )
+        session.add(root_obj)
+        session.commit()
+
+        label_display = f" ({label})" if label else ""
+        preview = content[:50] + "..." if len(content) > 50 else content
+        console.print(f"[green]Created root {root_obj.id}:[/green]{label_display} [{source_type}]")
+        console.print(f"  [dim]{preview}[/dim]")
+
+
+@root.command("attach")
+@click.argument("root_id", type=int)
+@click.argument("refs", nargs=-1, required=True)
+def root_attach(root_id: int, refs: tuple):
+    """Attach a root to one or more items.
+
+    Uses type prefixes: g:1 (grove), t:5 (trunk), s:12 (stem), b:45 (bud)
+
+    Example: gv root attach 1 b:4 b:5 b:6 s:7
+    """
+    from grove.db import get_session
+    from grove.models import Root, RootLink
+
+    with get_session() as session:
+        root_obj = session.query(Root).filter(Root.id == root_id).first()
+        if not root_obj:
+            console.print(f"[red]Root not found:[/red] {root_id}")
+            return
+
+        attached = 0
+        skipped = 0
+
+        for ref in refs:
+            try:
+                item_type, item_id = parse_item_ref(ref)
+            except click.BadParameter as e:
+                console.print(f"[yellow]Skipping {ref}:[/yellow] {e.message}")
+                skipped += 1
+                continue
+
+            # Verify item exists
+            item, _ = get_item_by_ref(session, item_type, item_id)
+            if not item:
+                console.print(f"[yellow]Skipping {ref}:[/yellow] not found")
+                skipped += 1
+                continue
+
+            # Check if link already exists
+            existing = session.query(RootLink).filter(
+                RootLink.root_id == root_id,
+                RootLink.item_type == item_type,
+                RootLink.item_id == item_id
+            ).first()
+
+            if existing:
+                console.print(f"[dim]Already linked:[/dim] {ref}")
+                skipped += 1
+                continue
+
+            link = RootLink(
+                root_id=root_id,
+                item_type=item_type,
+                item_id=item_id
+            )
+            session.add(link)
+            title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+            console.print(f"[green]Attached:[/green] {ref} ({title})")
+            attached += 1
+
+        session.commit()
+
+        if attached > 0 or skipped > 0:
+            console.print(f"\n[bold]Summary:[/bold] {attached} attached, {skipped} skipped")
+
+
+@root.command("detach")
+@click.argument("root_id", type=int)
+@click.argument("refs", nargs=-1, required=True)
+def root_detach(root_id: int, refs: tuple):
+    """Remove links between a root and items.
+
+    Example: gv root detach 1 b:45
+    """
+    from grove.db import get_session
+    from grove.models import Root, RootLink
+
+    with get_session() as session:
+        root_obj = session.query(Root).filter(Root.id == root_id).first()
+        if not root_obj:
+            console.print(f"[red]Root not found:[/red] {root_id}")
+            return
+
+        removed = 0
+        not_found = 0
+
+        for ref in refs:
+            try:
+                item_type, item_id = parse_item_ref(ref)
+            except click.BadParameter as e:
+                console.print(f"[yellow]Skipping {ref}:[/yellow] {e.message}")
+                not_found += 1
+                continue
+
+            link = session.query(RootLink).filter(
+                RootLink.root_id == root_id,
+                RootLink.item_type == item_type,
+                RootLink.item_id == item_id
+            ).first()
+
+            if not link:
+                console.print(f"[dim]Not linked:[/dim] {ref}")
+                not_found += 1
+                continue
+
+            session.delete(link)
+            console.print(f"[green]Detached:[/green] {ref}")
+            removed += 1
+
+        session.commit()
+
+        if removed > 0 or not_found > 0:
+            console.print(f"\n[bold]Summary:[/bold] {removed} detached, {not_found} not found")
+
+
+@root.command("show")
+@click.argument("root_id", type=int)
+def root_show(root_id: int):
+    """Show a root and all items linked to it.
+
+    Example: gv root show 1
+    """
+    from grove.db import get_session
+    from grove.models import Root, RootLink
+
+    with get_session() as session:
+        root_obj = session.query(Root).filter(Root.id == root_id).first()
+        if not root_obj:
+            console.print(f"[red]Root not found:[/red] {root_id}")
+            return
+
+        # Header
+        console.print()
+        label_display = f" - {root_obj.label}" if root_obj.label else ""
+        console.print(f"[bold]Root {root_obj.id}[/bold]{label_display} [{root_obj.source_type}]")
+        console.print()
+
+        # Content
+        console.print(f"[cyan]Content:[/cyan]")
+        console.print(f"  {root_obj.content}")
+        console.print()
+
+        # Linked items
+        links = session.query(RootLink).filter(RootLink.root_id == root_id).all()
+        if links:
+            console.print(f"[cyan]Linked items ({len(links)}):[/cyan]")
+            for link in links:
+                prefix_map = {'grove': 'g', 'trunk': 't', 'stem': 'br', 'bud': 'b'}
+                prefix = prefix_map.get(link.item_type, link.item_type)
+                ref_str = f"{prefix}:{link.item_id}"
+
+                item, _ = get_item_by_ref(session, link.item_type, link.item_id)
+                if item:
+                    title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+                    console.print(f"  {ref_str}: {title}")
+                else:
+                    console.print(f"  {ref_str}: [dim](deleted)[/dim]")
+        else:
+            console.print("[dim]No linked items[/dim]")
+
+        # Metadata
+        console.print()
+        console.print(f"[dim]Created: {root_obj.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+        if root_obj.session_id:
+            console.print(f"[dim]Session: {root_obj.session_id}[/dim]")
+
+
+@root.command("list")
+@click.option("--type", "source_type", type=click.Choice(["quote", "transcript", "session", "note"]),
+              help="Filter by source type")
+@click.option("--limit", "-n", default=20, help="Max roots to show")
+def root_list(source_type: str | None, limit: int):
+    """List all roots.
+
+    Example: gv root list
+    Example: gv root list --type quote -n 50
+    """
+    from grove.db import get_session
+    from grove.models import Root, RootLink
+    from sqlalchemy import func
+
+    with get_session() as session:
+        query = session.query(Root)
+        if source_type:
+            query = query.filter(Root.source_type == source_type)
+        query = query.order_by(Root.created_at.desc()).limit(limit)
+
+        roots = query.all()
+
+        if not roots:
+            console.print("[dim]No roots found[/dim]")
+            return
+
+        console.print()
+        console.print(f"[bold]Roots ({len(roots)}):[/bold]")
+        console.print()
+
+        for root_obj in roots:
+            # Count links
+            link_count = session.query(func.count(RootLink.id)).filter(
+                RootLink.root_id == root_obj.id
+            ).scalar()
+
+            label_display = f" - {root_obj.label}" if root_obj.label else ""
+            preview = root_obj.content[:60] + "..." if len(root_obj.content) > 60 else root_obj.content
+            preview = preview.replace('\n', ' ')
+
+            console.print(f"  [bold]{root_obj.id}[/bold]{label_display} [{root_obj.source_type}] ({link_count} links)")
+            console.print(f"    [dim]{preview}[/dim]")
+            console.print()
+
+
+@main.command("roots")
+@click.argument("ref")
+def show_roots(ref: str):
+    """Show all roots linked to an item.
+
+    Uses type prefixes: g:1 (grove), t:5 (trunk), s:12 (stem), b:45 (bud)
+
+    Example: gv roots b:45
+    Example: gv roots s:12
+    """
+    from grove.db import get_session
+    from grove.models import Root, RootLink
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    with get_session() as session:
+        item, _ = get_item_by_ref(session, item_type, item_id)
+        if not item:
+            console.print(f"[red]Not found:[/red] {ref}")
+            return
+
+        title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+
+        # Get linked roots
+        roots = session.query(Root).join(RootLink).filter(
+            RootLink.item_type == item_type,
+            RootLink.item_id == item_id
+        ).all()
+
+        console.print()
+        console.print(f"[bold]Roots for {ref}:[/bold] {title}")
+        console.print()
+
+        if not roots:
+            console.print("[dim]No roots linked to this item[/dim]")
+            return
+
+        for root_obj in roots:
+            label_display = f" - {root_obj.label}" if root_obj.label else ""
+            preview = root_obj.content[:80] + "..." if len(root_obj.content) > 80 else root_obj.content
+            preview = preview.replace('\n', ' ')
+
+            console.print(f"  [bold]{root_obj.id}[/bold]{label_display} [{root_obj.source_type}]")
+            console.print(f"    [dim]{preview}[/dim]")
+            console.print()
+
+
+# =============================================================================
+# TIDY - Grove maintenance and refactoring
+# =============================================================================
+
+
+@main.group()
+def tidy():
+    """Grove tidying commands for detecting and refactoring overgrown hierarchies.
+
+    Helps maintain a healthy grove by identifying when trunks have too many
+    stems, stems have too many buds, or hierarchies need restructuring.
+    """
+    pass
+
+
+def get_tidy_threshold(session, key: str, default: int = 10) -> int:
+    """Get a tidy threshold from config, with fallback to default."""
+    from grove.models import TidyConfig
+    config = session.query(TidyConfig).filter(TidyConfig.key == key).first()
+    return config.value if config else default
+
+
+@tidy.command()
+@click.option("--threshold", "-t", type=int, help="Override threshold for overgrown detection")
+@click.argument("scope", required=False)
+@click.option("--json", "output_json", is_flag=True, help="Machine-readable JSON output")
+def scan(threshold: int | None, scope: str | None, output_json: bool):
+    """Detect overgrown areas in the grove.
+
+    Scans for trunks with too many stems, stems with too many buds,
+    and other hierarchy issues that might benefit from refactoring.
+
+    SCOPE can be a trunk reference (t:5) to limit scanning.
+
+    Examples:
+        gv tidy scan                    # Scan everything
+        gv tidy scan --threshold 8      # Custom threshold
+        gv tidy scan t:5                # Scope to specific trunk
+        gv tidy scan --json             # Machine-readable output
+    """
+    import json
+    from grove.db import get_session
+    from grove.models import Trunk, Stem, Bud, Fruit
+
+    with get_session() as session:
+        # Get thresholds
+        stems_threshold = threshold or get_tidy_threshold(session, 'stems_per_trunk', 10)
+        buds_threshold = threshold or get_tidy_threshold(session, 'buds_per_stem', 10)
+        fruits_threshold = threshold or get_tidy_threshold(session, 'fruits_per_trunk', 10)
+
+        overgrown = {
+            'trunks': [],
+            'stems': [],
+            'fruits': [],
+        }
+
+        # Scope filtering
+        trunk_filter = None
+        if scope:
+            try:
+                item_type, item_id = parse_item_ref(scope)
+                if item_type != 'trunk':
+                    console.print(f"[red]Scope must be a trunk (t:id), got {item_type}[/red]")
+                    return
+                trunk_filter = item_id
+            except click.BadParameter as e:
+                console.print(f"[red]{e.message}[/red]")
+                return
+
+        # Scan trunks for overgrown stems
+        trunk_query = session.query(Trunk)
+        if trunk_filter:
+            trunk_query = trunk_query.filter(Trunk.id == trunk_filter)
+
+        for trunk in trunk_query.all():
+            stem_count = session.query(Stem).filter(Stem.trunk_id == trunk.id).count()
+            if stem_count > stems_threshold:
+                overgrown['trunks'].append({
+                    'id': trunk.id,
+                    'title': trunk.title,
+                    'count': stem_count,
+                    'threshold': stems_threshold,
+                    'excess': stem_count - stems_threshold,
+                })
+
+            # Check fruits per trunk
+            fruit_count = session.query(Fruit).filter(Fruit.trunk_id == trunk.id).count()
+            if fruit_count > fruits_threshold:
+                overgrown['fruits'].append({
+                    'trunk_id': trunk.id,
+                    'trunk_title': trunk.title,
+                    'count': fruit_count,
+                    'threshold': fruits_threshold,
+                    'excess': fruit_count - fruits_threshold,
+                })
+
+        # Scan stems for overgrown buds
+        stem_query = session.query(Stem)
+        if trunk_filter:
+            stem_query = stem_query.filter(Stem.trunk_id == trunk_filter)
+
+        for stem in stem_query.all():
+            bud_count = session.query(Bud).filter(Bud.stem_id == stem.id).count()
+            if bud_count > buds_threshold:
+                overgrown['stems'].append({
+                    'id': stem.id,
+                    'title': stem.title,
+                    'trunk_id': stem.trunk_id,
+                    'count': bud_count,
+                    'threshold': buds_threshold,
+                    'excess': bud_count - buds_threshold,
+                })
+
+        # Log the scan activity
+        log_activity(session, 'grove', 0, 'tidy_scan',
+                    f"Scanned with threshold {threshold or 'default'}, found {len(overgrown['trunks'])} overgrown trunks, {len(overgrown['stems'])} overgrown stems")
+        session.commit()
+
+        # Output
+        if output_json:
+            console.print(json.dumps(overgrown, indent=2))
+            return
+
+        total_issues = len(overgrown['trunks']) + len(overgrown['stems']) + len(overgrown['fruits'])
+
+        if total_issues == 0:
+            console.print("[green]Grove is tidy![/green] No overgrown areas detected.")
+            console.print(f"[dim]Thresholds: {stems_threshold} stems/trunk, {buds_threshold} buds/stem, {fruits_threshold} fruits/trunk[/dim]")
+            return
+
+        console.print(f"[yellow]Found {total_issues} overgrown area(s)[/yellow]")
+        console.print()
+
+        if overgrown['trunks']:
+            console.print("[bold]Overgrown Trunks[/bold] (too many stems):")
+            for t in overgrown['trunks']:
+                console.print(f"  t:{t['id']} {t['title']}")
+                console.print(f"    [yellow]{t['count']} stems[/yellow] (threshold: {t['threshold']}, excess: +{t['excess']})")
+            console.print()
+
+        if overgrown['stems']:
+            console.print("[bold]Overgrown Stems[/bold] (too many buds):")
+            for b in overgrown['stems']:
+                console.print(f"  s:{b['id']} {b['title']}")
+                console.print(f"    [yellow]{b['count']} buds[/yellow] (threshold: {b['threshold']}, excess: +{b['excess']})")
+            console.print()
+
+        if overgrown['fruits']:
+            console.print("[bold]Overgrown Fruit Sets[/bold] (too many fruits per trunk):")
+            for f in overgrown['fruits']:
+                console.print(f"  t:{f['trunk_id']} {f['trunk_title']}")
+                console.print(f"    [yellow]{f['count']} fruits[/yellow] (threshold: {f['threshold']}, excess: +{f['excess']})")
+            console.print()
+
+        console.print("[dim]Use 'gv tidy suggest <ref>' for refactoring suggestions[/dim]")
+
+
+@tidy.command()
+@click.argument("ref")
+def suggest(ref: str):
+    """Get refactoring suggestions for an overgrown item.
+
+    Analyzes the item and suggests strategies like:
+    - Grouping items into sub-trunks or sub-stems
+    - Archiving inactive items
+    - Merging similar items
+
+    Examples:
+        gv tidy suggest t:3    # Suggestions for trunk with many stems
+        gv tidy suggest s:12  # Suggestions for stem with many buds
+    """
+    from datetime import datetime, timedelta, timezone
+    from grove.db import get_session
+    from grove.models import Trunk, Stem, Bud
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    with get_session() as session:
+        if item_type == 'trunk':
+            trunk = session.query(Trunk).filter(Trunk.id == item_id).first()
+            if not trunk:
+                console.print(f"[red]Trunk not found:[/red] {item_id}")
+                return
+
+            stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).all()
+
+            console.print()
+            console.print(f"[bold]Suggestions for t:{trunk.id} {trunk.title}[/bold]")
+            console.print(f"[dim]{len(stems)} stems[/dim]")
+            console.print()
+
+            # Group by labels
+            label_groups = {}
+            unlabeled = []
+            for br in stems:
+                if br.labels:
+                    for label in br.labels:
+                        if label not in label_groups:
+                            label_groups[label] = []
+                        label_groups[label].append(br)
+                else:
+                    unlabeled.append(br)
+
+            if label_groups:
+                console.print("[cyan]1. Group by labels into sub-trunks:[/cyan]")
+                for label, brs in sorted(label_groups.items(), key=lambda x: -len(x[1])):
+                    if len(brs) >= 2:
+                        console.print(f"   '{label}': {len(brs)} stems")
+                        for br in brs[:3]:
+                            console.print(f"      - s:{br.id} {br.title}")
+                        if len(brs) > 3:
+                            console.print(f"      ... and {len(brs) - 3} more")
+                console.print()
+
+            # Find inactive stems
+            stale_threshold = datetime.now(timezone.utc) - timedelta(days=30)
+            inactive = [br for br in stems if br.updated_at and br.updated_at < stale_threshold]
+            if inactive:
+                console.print("[cyan]2. Archive inactive stems (no updates in 30+ days):[/cyan]")
+                for br in inactive[:5]:
+                    days = (datetime.now(timezone.utc) - br.updated_at).days
+                    console.print(f"   s:{br.id} {br.title} ({days}d inactive)")
+                if len(inactive) > 5:
+                    console.print(f"   ... and {len(inactive) - 5} more")
+                console.print()
+
+            # Find completed stems
+            completed = [br for br in stems if br.status == 'completed']
+            if completed:
+                console.print("[cyan]3. Move completed stems to archive:[/cyan]")
+                for br in completed[:5]:
+                    console.print(f"   s:{br.id} {br.title}")
+                if len(completed) > 5:
+                    console.print(f"   ... and {len(completed) - 5} more")
+                console.print()
+
+            # Suggest splitting
+            if len(stems) > 15:
+                console.print("[cyan]4. Consider splitting trunk:[/cyan]")
+                console.print(f"   With {len(stems)} stems, consider using 'gv tidy split t:{trunk.id}'")
+                console.print("   to interactively divide into 2-3 sub-trunks")
+                console.print()
+
+        elif item_type == 'stem':
+            stem = session.query(Stem).filter(Stem.id == item_id).first()
+            if not stem:
+                console.print(f"[red]Stem not found:[/red] {item_id}")
+                return
+
+            buds = session.query(Bud).filter(Bud.stem_id == stem.id).all()
+
+            console.print()
+            console.print(f"[bold]Suggestions for s:{stem.id} {stem.title}[/bold]")
+            console.print(f"[dim]{len(buds)} buds[/dim]")
+            console.print()
+
+            # Group by status
+            status_groups = {}
+            for bud in buds:
+                if bud.status not in status_groups:
+                    status_groups[bud.status] = []
+                status_groups[bud.status].append(bud)
+
+            if status_groups:
+                console.print("[cyan]1. Buds by status:[/cyan]")
+                for status, bud_list in sorted(status_groups.items(), key=lambda x: -len(x[1])):
+                    console.print(f"   {status}: {len(bud_list)} buds")
+                console.print()
+
+            # Find bloomed buds to archive
+            bloomed = status_groups.get('bloomed', [])
+            if bloomed:
+                console.print("[cyan]2. Archive bloomed buds:[/cyan]")
+                console.print(f"   {len(bloomed)} completed buds could be archived")
+                console.print()
+
+            # Find mulched buds
+            mulched = status_groups.get('mulch', [])
+            if mulched:
+                console.print("[cyan]3. Clean up mulched buds:[/cyan]")
+                console.print(f"   {len(mulched)} abandoned buds could be removed")
+                console.print()
+
+            # Group by labels
+            label_groups = {}
+            for bud in buds:
+                if bud.labels:
+                    for label in bud.labels:
+                        if label not in label_groups:
+                            label_groups[label] = []
+                        label_groups[label].append(bud)
+
+            if label_groups:
+                console.print("[cyan]4. Group by labels into sub-stems:[/cyan]")
+                for label, bud_list in sorted(label_groups.items(), key=lambda x: -len(x[1])):
+                    if len(bud_list) >= 3:
+                        console.print(f"   '{label}': {len(bud_list)} buds")
+                console.print()
+
+            # Suggest splitting
+            active_buds = [b for b in buds if b.status in ('seed', 'dormant', 'budding')]
+            if len(active_buds) > 15:
+                console.print("[cyan]5. Consider splitting stem:[/cyan]")
+                console.print(f"   With {len(active_buds)} active buds, consider using 'gv tidy split s:{stem.id}'")
+                console.print()
+
+        else:
+            console.print(f"[yellow]Suggestions only available for trunks (t:) and stems (s:)[/yellow]")
+
+
+@tidy.command()
+@click.argument("refs", nargs=-1, required=True)
+@click.option("--new-trunk", help="Create a new trunk with this title")
+@click.option("--new-stem", help="Create a new stem with this title")
+@click.option("--parent", help="Parent for new trunk (t:id) or stem (t:id or s:id)")
+@click.option("--dry-run", is_flag=True, help="Show what would be moved without making changes")
+def graft(refs: tuple, new_trunk: str | None, new_stem: str | None, parent: str | None, dry_run: bool):
+    """Move items to a new or existing container.
+
+    Grafts stems onto trunks, or buds onto stems. Can also create
+    new containers during the graft operation.
+
+    The last reference is the target (unless --new-trunk or --new-stem is used).
+
+    Examples:
+        gv tidy graft s:1 s:2 s:3 t:5              # Move stems to trunk
+        gv tidy graft s:1 s:2 --new-trunk "Infra" --parent t:3
+        gv tidy graft b:10 b:11 --new-stem "Subtask" --parent s:5
+        gv tidy graft s:1 s:2 t:5 --dry-run         # Preview
+    """
+    from grove.db import get_session
+    from grove.models import Trunk, Stem, Bud
+
+    if not refs:
+        console.print("[red]No items specified[/red]")
+        return
+
+    # When using --new-trunk or --new-stem, all refs are items to move
+    # Otherwise, the last ref is the target
+    if new_trunk or new_stem:
+        items_refs = refs
+        target = None
+    else:
+        if len(refs) < 2:
+            console.print("[red]Need at least one item to move and a target[/red]")
+            return
+        items_refs = refs[:-1]
+        target = refs[-1]
+
+    # Parse what we're moving
+    items_to_move = []
+    item_types = set()
+    for ref in items_refs:
+        try:
+            item_type, item_id = parse_item_ref(ref)
+            items_to_move.append((item_type, item_id, ref))
+            item_types.add(item_type)
+        except click.BadParameter as e:
+            console.print(f"[red]Invalid reference '{ref}':[/red] {e.message}")
+            return
+
+    if not items_to_move:
+        console.print("[red]No valid items to move[/red]")
+        return
+
+    # Validate all items are the same type
+    if len(item_types) > 1:
+        console.print("[red]All items must be the same type (all stems or all buds)[/red]")
+        return
+
+    item_type = item_types.pop()
+
+    with get_session() as session:
+        # Determine or create target
+        target_type = None
+        target_id = None
+        target_obj = None
+
+        if new_trunk:
+            # Creating a new trunk
+            if item_type != 'stem':
+                console.print("[red]--new-trunk can only be used when grafting stems[/red]")
+                return
+
+            parent_id = None
+            grove_id = None
+            if parent:
+                try:
+                    p_type, p_id = parse_item_ref(parent)
+                    if p_type == 'trunk':
+                        parent_id = p_id
+                        parent_trunk = session.query(Trunk).filter(Trunk.id == p_id).first()
+                        if parent_trunk:
+                            grove_id = parent_trunk.grove_id
+                    elif p_type == 'grove':
+                        grove_id = p_id
+                    else:
+                        console.print(f"[red]Parent must be a trunk (t:) or grove (g:)[/red]")
+                        return
+                except click.BadParameter as e:
+                    console.print(f"[red]{e.message}[/red]")
+                    return
+
+            if dry_run:
+                console.print(f"[dim]Would create trunk:[/dim] {new_trunk}")
+            else:
+                new_trunk_obj = Trunk(
+                    title=new_trunk,
+                    parent_id=parent_id,
+                    grove_id=grove_id,
+                    status="active",
+                )
+                session.add(new_trunk_obj)
+                session.flush()
+                target_id = new_trunk_obj.id
+                target_obj = new_trunk_obj
+                console.print(f"[green]Created trunk:[/green] t:{target_id} {new_trunk}")
+
+            target_type = 'trunk'
+
+        elif new_stem:
+            # Creating a new stem
+            if item_type != 'bud':
+                console.print("[red]--new-stem can only be used when grafting buds[/red]")
+                return
+
+            trunk_id = None
+            parent_stem_id = None
+            if parent:
+                try:
+                    p_type, p_id = parse_item_ref(parent)
+                    if p_type == 'trunk':
+                        trunk_id = p_id
+                    elif p_type == 'stem':
+                        parent_stem_id = p_id
+                        # Get trunk from parent stem
+                        parent_stem = session.query(Stem).filter(Stem.id == p_id).first()
+                        if parent_stem:
+                            trunk_id = parent_stem.trunk_id
+                    else:
+                        console.print(f"[red]Parent must be a trunk (t:) or stem (s:)[/red]")
+                        return
+                except click.BadParameter as e:
+                    console.print(f"[red]{e.message}[/red]")
+                    return
+
+            if dry_run:
+                console.print(f"[dim]Would create stem:[/dim] {new_stem}")
+            else:
+                new_stem_obj = Stem(
+                    title=new_stem,
+                    trunk_id=trunk_id,
+                    parent_stem_id=parent_stem_id,
+                    status="active",
+                )
+                session.add(new_stem_obj)
+                session.flush()
+                target_id = new_stem_obj.id
+                target_obj = new_stem_obj
+                console.print(f"[green]Created stem:[/green] s:{target_id} {new_stem}")
+
+            target_type = 'stem'
+
+        else:
+            # Moving to existing target
+            try:
+                target_type, target_id = parse_item_ref(target)
+            except click.BadParameter as e:
+                console.print(f"[red]{e.message}[/red]")
+                return
+
+            # Validate target type matches items
+            if item_type == 'stem' and target_type not in ('trunk', 'stem'):
+                console.print("[red]Stems can only be grafted to trunks or parent stems[/red]")
+                return
+            if item_type == 'bud' and target_type != 'stem':
+                console.print("[red]Buds can only be grafted to stems[/red]")
+                return
+
+            if target_type == 'trunk':
+                target_obj = session.query(Trunk).filter(Trunk.id == target_id).first()
+            elif target_type == 'stem':
+                target_obj = session.query(Stem).filter(Stem.id == target_id).first()
+
+            if not target_obj:
+                console.print(f"[red]Target not found:[/red] {target}")
+                return
+
+        # Move items
+        moved = 0
+        # For dry-run output, determine target display string
+        if dry_run and target_id is None:
+            if new_trunk:
+                target_display = f"new trunk \"{new_trunk}\""
+            elif new_stem:
+                target_display = f"new stem \"{new_stem}\""
+            else:
+                target_display = "unknown"
+        else:
+            target_display = f"t:{target_id}" if target_type == 'trunk' else f"s:{target_id}"
+
+        for _, iid, ref_str in items_to_move:
+            if item_type == 'stem':
+                item = session.query(Stem).filter(Stem.id == iid).first()
+                if not item:
+                    console.print(f"[yellow]Stem not found:[/yellow] {ref_str}")
+                    continue
+
+                if dry_run:
+                    console.print(f"[dim]Would move:[/dim] s:{item.id} {item.title} → {target_display}")
+                    moved += 1
+                else:
+                    old_trunk = item.trunk_id
+                    old_parent = item.parent_stem_id
+                    if target_type == 'trunk':
+                        item.trunk_id = target_id
+                        item.parent_stem_id = None
+                    else:
+                        # Moving to parent stem
+                        item.parent_stem_id = target_id
+                        # Inherit trunk from target
+                        if target_obj:
+                            item.trunk_id = target_obj.trunk_id
+
+                    log_activity(session, 'stem', item.id, 'grafted',
+                                f'Moved from trunk:{old_trunk}/parent:{old_parent} to {target_type}:{target_id}')
+                    console.print(f"[green]Grafted:[/green] s:{item.id} {item.title}")
+                    moved += 1
+
+            elif item_type == 'bud':
+                item = session.query(Bud).filter(Bud.id == iid).first()
+                if not item:
+                    console.print(f"[yellow]Bud not found:[/yellow] {ref_str}")
+                    continue
+
+                if dry_run:
+                    console.print(f"[dim]Would move:[/dim] b:{item.id} {item.title} → {target_display}")
+                    moved += 1
+                else:
+                    old_stem = item.stem_id
+                    item.stem_id = target_id
+                    log_activity(session, 'bud', item.id, 'grafted',
+                                f'Moved from stem:{old_stem} to stem:{target_id}')
+                    console.print(f"[green]Grafted:[/green] b:{item.id} {item.title}")
+                    moved += 1
+
+        if not dry_run:
+            session.commit()
+
+        console.print()
+        if dry_run:
+            console.print(f"[dim]Dry run complete. Would graft {len(items_to_move)} item(s).[/dim]")
+        else:
+            console.print(f"[green]Grafted {moved} item(s)[/green]")
+
+
+@tidy.command()
+@click.argument("ref")
+@click.option("--auto", is_flag=True, help="Auto-group by labels/keywords")
+@click.option("--into", type=int, help="Suggest N-way split")
+def split(ref: str, auto: bool, into: int | None):
+    """Interactive splitting of overgrown trunks or stems.
+
+    Guides you through splitting a trunk into sub-trunks or a stem
+    into sibling/sub-stems.
+
+    Examples:
+        gv tidy split t:3           # Interactive split trunk into sub-trunks
+        gv tidy split s:12         # Split stem
+        gv tidy split t:3 --auto    # Auto-group by labels/keywords
+        gv tidy split t:3 --into 3  # Suggest 3-way split
+    """
+    from grove.db import get_session
+    from grove.models import Trunk, Stem, Bud
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    if item_type not in ('trunk', 'stem'):
+        console.print("[red]Split only works on trunks (t:) and stems (s:)[/red]")
+        return
+
+    with get_session() as session:
+        if item_type == 'trunk':
+            trunk = session.query(Trunk).filter(Trunk.id == item_id).first()
+            if not trunk:
+                console.print(f"[red]Trunk not found:[/red] {item_id}")
+                return
+
+            stems = session.query(Stem).filter(Stem.trunk_id == trunk.id).all()
+            if not stems:
+                console.print("[yellow]Trunk has no stems to split[/yellow]")
+                return
+
+            console.print()
+            console.print(f"[bold]Splitting t:{trunk.id} {trunk.title}[/bold]")
+            console.print(f"[dim]{len(stems)} stems[/dim]")
+            console.print()
+
+            # Auto-grouping by labels
+            if auto:
+                label_groups = {}
+                unlabeled = []
+                for br in stems:
+                    if br.labels:
+                        primary_label = br.labels[0]  # Use first label as group key
+                        if primary_label not in label_groups:
+                            label_groups[primary_label] = []
+                        label_groups[primary_label].append(br)
+                    else:
+                        unlabeled.append(br)
+
+                if label_groups:
+                    console.print("[cyan]Auto-detected groups by primary label:[/cyan]")
+                    console.print()
+                    for i, (label, brs) in enumerate(sorted(label_groups.items(), key=lambda x: -len(x[1])), 1):
+                        console.print(f"  [bold]{i}. New sub-trunk: '{label}'[/bold]")
+                        for br in brs:
+                            console.print(f"     s:{br.id} {br.title}")
+                        console.print()
+
+                    if unlabeled:
+                        console.print(f"  [dim]Unlabeled ({len(unlabeled)} stems would stay):[/dim]")
+                        for br in unlabeled[:3]:
+                            console.print(f"     s:{br.id} {br.title}")
+                        if len(unlabeled) > 3:
+                            console.print(f"     ... and {len(unlabeled) - 3} more")
+                        console.print()
+
+                    console.print("[dim]Use 'gv tidy graft s:<ids> --new-trunk \"<name>\" --parent t:{item_id}' to execute[/dim]")
+                else:
+                    console.print("[yellow]No labels found for auto-grouping. Try adding labels to stems first.[/yellow]")
+                return
+
+            # Suggest N-way split
+            n = into or 2
+            if n < 2:
+                console.print("[red]Split must be into at least 2 parts[/red]")
+                return
+
+            chunk_size = len(stems) // n
+            remainder = len(stems) % n
+
+            console.print(f"[cyan]Suggested {n}-way split:[/cyan]")
+            console.print()
+
+            sorted_stems = sorted(stems, key=lambda b: b.title)
+            start = 0
+            for i in range(n):
+                size = chunk_size + (1 if i < remainder else 0)
+                chunk = sorted_stems[start:start + size]
+                start += size
+
+                console.print(f"  [bold]{i + 1}. New sub-trunk ({len(chunk)} stems)[/bold]")
+                for br in chunk[:3]:
+                    console.print(f"     s:{br.id} {br.title}")
+                if len(chunk) > 3:
+                    console.print(f"     ... and {len(chunk) - 3} more")
+                console.print()
+
+            console.print("[dim]This is a suggestion based on alphabetical order.[/dim]")
+            console.print("[dim]Use 'gv tidy graft s:<ids> --new-trunk \"<name>\" --parent t:{item_id}' to execute[/dim]")
+
+        elif item_type == 'stem':
+            stem = session.query(Stem).filter(Stem.id == item_id).first()
+            if not stem:
+                console.print(f"[red]Stem not found:[/red] {item_id}")
+                return
+
+            buds = session.query(Bud).filter(Bud.stem_id == stem.id).all()
+            if not buds:
+                console.print("[yellow]Stem has no buds to split[/yellow]")
+                return
+
+            console.print()
+            console.print(f"[bold]Splitting s:{stem.id} {stem.title}[/bold]")
+            console.print(f"[dim]{len(buds)} buds[/dim]")
+            console.print()
+
+            # Auto-grouping by labels
+            if auto:
+                label_groups = {}
+                unlabeled = []
+                for bud in buds:
+                    if bud.labels:
+                        primary_label = bud.labels[0]
+                        if primary_label not in label_groups:
+                            label_groups[primary_label] = []
+                        label_groups[primary_label].append(bud)
+                    else:
+                        unlabeled.append(bud)
+
+                if label_groups:
+                    console.print("[cyan]Auto-detected groups by primary label:[/cyan]")
+                    console.print()
+                    for i, (label, bud_list) in enumerate(sorted(label_groups.items(), key=lambda x: -len(x[1])), 1):
+                        console.print(f"  [bold]{i}. New sub-stem: '{label}'[/bold]")
+                        for bud in bud_list[:3]:
+                            console.print(f"     b:{bud.id} {bud.title}")
+                        if len(bud_list) > 3:
+                            console.print(f"     ... and {len(bud_list) - 3} more")
+                        console.print()
+
+                    if unlabeled:
+                        console.print(f"  [dim]Unlabeled ({len(unlabeled)} buds would stay):[/dim]")
+                        for bud in unlabeled[:3]:
+                            console.print(f"     b:{bud.id} {bud.title}")
+                        if len(unlabeled) > 3:
+                            console.print(f"     ... and {len(unlabeled) - 3} more")
+                        console.print()
+
+                    console.print(f"[dim]Use 'gv tidy graft b:<ids> --new-stem \"<name>\" --parent s:{item_id}' to execute[/dim]")
+                else:
+                    console.print("[yellow]No labels found for auto-grouping. Try adding labels to buds first.[/yellow]")
+                return
+
+            # Suggest N-way split
+            n = into or 2
+            if n < 2:
+                console.print("[red]Split must be into at least 2 parts[/red]")
+                return
+
+            chunk_size = len(buds) // n
+            remainder = len(buds) % n
+
+            console.print(f"[cyan]Suggested {n}-way split:[/cyan]")
+            console.print()
+
+            sorted_buds = sorted(buds, key=lambda b: b.title)
+            start = 0
+            for i in range(n):
+                size = chunk_size + (1 if i < remainder else 0)
+                chunk = sorted_buds[start:start + size]
+                start += size
+
+                console.print(f"  [bold]{i + 1}. New sub-stem ({len(chunk)} buds)[/bold]")
+                for bud in chunk[:3]:
+                    console.print(f"     b:{bud.id} {bud.title}")
+                if len(chunk) > 3:
+                    console.print(f"     ... and {len(chunk) - 3} more")
+                console.print()
+
+            console.print("[dim]This is a suggestion based on alphabetical order.[/dim]")
+            console.print(f"[dim]Use 'gv tidy graft b:<ids> --new-stem \"<name>\" --parent s:{item_id}' to execute[/dim]")
+
+        # Log the split analysis
+        log_activity(session, item_type, item_id, 'split', f'Split analysis with auto={auto}, into={into}')
+        session.commit()
+
+
+@tidy.command()
+@click.option("--set", "set_key", nargs=2, help="Set a threshold (key value)")
+def config(set_key: tuple | None):
+    """View or configure tidy thresholds.
+
+    Thresholds determine when areas are flagged as overgrown.
+    Default: 10 for stems-per-trunk, buds-per-stem, fruits-per-trunk.
+
+    Examples:
+        gv tidy config                              # View current thresholds
+        gv tidy config --set stems-per-trunk 12 # Set threshold
+    """
+    from grove.db import get_session
+    from grove.models import TidyConfig
+
+    with get_session() as session:
+        if set_key:
+            key, value_str = set_key
+            valid_keys = ['stems-per-trunk', 'buds-per-stem', 'fruits-per-trunk']
+            # Normalize key (allow both - and _)
+            normalized_key = key.replace('-', '_')
+
+            if normalized_key not in [k.replace('-', '_') for k in valid_keys]:
+                console.print(f"[red]Invalid key:[/red] {key}")
+                console.print(f"[dim]Valid keys: {', '.join(valid_keys)}[/dim]")
+                return
+
+            try:
+                value = int(value_str)
+                if value < 1:
+                    console.print("[red]Threshold must be at least 1[/red]")
+                    return
+            except ValueError:
+                console.print(f"[red]Invalid value:[/red] {value_str} (must be integer)")
+                return
+
+            config_obj = session.query(TidyConfig).filter(TidyConfig.key == normalized_key).first()
+            if config_obj:
+                old_value = config_obj.value
+                config_obj.value = value
+                console.print(f"[green]Updated:[/green] {normalized_key}: {old_value} → {value}")
+            else:
+                config_obj = TidyConfig(key=normalized_key, value=value)
+                session.add(config_obj)
+                console.print(f"[green]Set:[/green] {normalized_key}: {value}")
+
+            session.commit()
+            return
+
+        # Show current config
+        console.print()
+        console.print("[bold]Tidy Thresholds[/bold]")
+        console.print()
+
+        defaults = {
+            'stems_per_trunk': 10,
+            'buds_per_stem': 10,
+            'fruits_per_trunk': 10,
+        }
+
+        for key, default in defaults.items():
+            config_obj = session.query(TidyConfig).filter(TidyConfig.key == key).first()
+            value = config_obj.value if config_obj else default
+            display_key = key.replace('_', '-')
+            is_default = config_obj is None
+            default_indicator = " [dim](default)[/dim]" if is_default else ""
+            console.print(f"  {display_key}: [cyan]{value}[/cyan]{default_indicator}")
+
+        console.print()
+        console.print("[dim]Use --set <key> <value> to change thresholds[/dim]")
 
 
 if __name__ == "__main__":
