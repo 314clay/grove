@@ -1,29 +1,57 @@
 # Grove
 
-Hierarchical task management with OKR alignment and dependency tracking.
+Botanical task management with hierarchical alignment and dependency tracking.
 
-Grove combines GTD-style zero-friction capture with strategic goal alignment. Every task can trace its "why" up through projects, initiatives, and life areas.
+Grove combines GTD-style zero-friction capture with strategic goal alignment. Every task (bud) can trace its "why" up through branches, trunks, and groves.
 
 ## Philosophy
 
 ```
 ┌─────────────────────────────────────────────┐
-│  AREAS (Life domains)                       │
+│  GROVES (Life domains)                      │
 │  Career, Health, Relationships, etc.        │
 ├─────────────────────────────────────────────┤
-│  INITIATIVES (Strategic goals)              │
+│  TRUNKS (Strategic initiatives)             │
 │  "Get promoted", "Run a marathon"           │
 ├─────────────────────────────────────────────┤
-│  KEY RESULTS (Measurable outcomes)          │
+│  FRUITS (Measurable outcomes)               │
 │  "Ship 3 features", "Run 5K in 25 min"      │
 ├─────────────────────────────────────────────┤
-│  PROJECTS (Finite deliverables)             │
+│  BRANCHES (Projects)                        │
 │  "Implement auth system", "Training plan"   │
 ├─────────────────────────────────────────────┤
-│  TASKS (Actions)                            │
+│  BUDS (Tasks)                               │
 │  "Review PR", "Morning run"                 │
+│  Status: seed → dormant → budding → bloomed │
 └─────────────────────────────────────────────┘
 ```
+
+## Naming Scheme
+
+| Concept | Name | Description |
+|---------|------|-------------|
+| Life domains | **Groves** | Forests where your work grows |
+| Strategic goals | **Trunks** | Main stems supporting branches |
+| Projects | **Branches** | Hold your buds |
+| Tasks | **Buds** | Work items that bloom |
+| Key Results | **Fruits** | Measurable outcomes that ripen |
+| Inbox items | **Seeds** | Raw captures waiting to be planted |
+| Completed | **Bloomed** | Work that has flowered |
+| Abandoned | **Mulch** | Feeds future growth |
+
+### Bud Lifecycle
+
+```
+seed → dormant → budding → bloomed
+  │                          │
+  └──────────────────────────┼──→ mulch (abandoned)
+```
+
+- **Seed**: Raw capture, unprocessed (inbox)
+- **Dormant**: Clarified, ready to grow
+- **Budding**: Actively being worked on
+- **Bloomed**: Completed
+- **Mulch**: Dropped/abandoned (nothing is wasted)
 
 ## Installation
 
@@ -42,18 +70,18 @@ export TODO_DATABASE_URL="postgresql://localhost/yourdb"
 ## Quick Start
 
 ```bash
-# Capture tasks instantly (GTD inbox)
+# Plant seeds (capture to inbox)
 gv add "Review quarterly goals"
 gv add "Fix login bug" --priority=high
 
-# View inbox
-gv inbox
+# View seeds (inbox)
+gv seeds
 
-# View actionable tasks (not blocked)
-gv now
+# Check the pulse (actionable, unblocked buds)
+gv pulse
 
-# Complete a task
-gv done 1
+# Mark a bud as bloomed (complete)
+gv bloom 1
 
 # See the big picture
 gv overview
@@ -61,67 +89,74 @@ gv overview
 
 ## Commands
 
-### Task Management
+### Bud Management
 
 | Command | Description |
 |---------|-------------|
-| `gv add "title"` | Add task to inbox |
-| `gv inbox` | Show unclarified inbox items |
-| `gv list` | Show all active tasks |
-| `gv now` | Show actionable, unblocked tasks |
-| `gv done <id>` | Mark task complete |
+| `gv add "title"` | Plant a new seed (add to inbox) |
+| `gv seeds` | Show unprocessed seeds |
+| `gv list` | Show all budding (active) buds |
+| `gv pulse` | Show actionable, unblocked buds |
+| `gv bloom <id>` | Mark bud as bloomed (complete) |
+| `gv mulch <id>` | Drop bud to mulch (abandon) |
+| `gv start <id>` | Start budding (move to active) |
+| `gv plant <id>` | Plant a seed (move to dormant) |
 
 ### Dependencies
 
 | Command | Description |
 |---------|-------------|
-| `gv blocks <a> <b>` | Task A blocks task B |
+| `gv blocks <a> <b>` | Bud A blocks bud B |
 | `gv chain <a> <b> <c>` | A → B → C (sequential) |
 | `gv unblock <a> <b>` | Remove dependency |
-| `gv blocked` | Show blocked tasks |
+| `gv blocked` | Show blocked buds |
 
 ### Hierarchy
 
 | Command | Description |
 |---------|-------------|
-| `gv why <id>` | Trace task → project → initiative → area |
+| `gv why <id>` | Trace bud → branch → trunk → grove |
 | `gv overview` | Full hierarchy tree with progress |
-| `gv project new "name"` | Create project |
-| `gv project list` | List all projects |
+| `gv branch new "name"` | Create branch (project) |
+| `gv branch list` | List all branches |
+| `gv trunk new "name"` | Create trunk (initiative) |
+| `gv trunk list` | List all trunks |
+| `gv grove new "name"` | Create grove (life area) |
+| `gv grove list` | List all groves |
 
 ### Beads Integration
 
 Grove integrates with [Beads](https://github.com/steveyegge/beads) for AI-native issue tracking in code projects.
 
 ```bash
-# Link project to beads repo
-gv beads link <project-id> ~/code/myproject
+# Link branch to beads repo
+gv branch link <branch-id> ~/code/myproject
 
-# Sync tasks with beads
-gv beads pull <project-id>
-gv beads push <task-id>
-gv beads sync <project-id>
+# Sync buds with beads
+gv beads pull <branch-id>
+gv beads push <branch-id>
+gv beads sync <branch-id>
 ```
 
 ## Data Model
 
-### Areas
+### Groves
 Life domains that persist indefinitely: Career, Health, Relationships, Finance, etc.
 
-### Initiatives
-Strategic goals within an area. Time-bounded, outcome-focused.
+### Trunks
+Strategic initiatives within a grove. Time-bounded, outcome-focused.
 
-### Key Results
-Measurable outcomes that indicate initiative progress. OKR-style metrics.
+### Fruits
+Measurable outcomes (OKRs) that indicate trunk progress.
 
-### Projects
-Finite deliverables with clear "done when" criteria. Can link to beads repos.
+### Branches
+Projects with clear completion criteria. Can link to beads repos.
 
-### Tasks
-Individual actions. Can belong to projects, link directly to initiatives/areas, or float freely in inbox.
+### Buds
+Individual work items. Can belong to branches, link directly to trunks/groves, or float freely as seeds.
 
 ### Dependencies
-Tasks can block other tasks, forming a dependency graph. `gv now` shows only unblocked work.
+Buds can block other buds, forming a dependency graph. `gv pulse` shows only unblocked work.
 
 ## Database
 
@@ -129,12 +164,12 @@ Grove uses PostgreSQL with a `todos` schema:
 
 ```sql
 -- Tables
-todos.areas
-todos.initiatives
-todos.key_results
-todos.projects
-todos.tasks
-todos.task_dependencies
+todos.groves
+todos.trunks
+todos.fruits
+todos.branches
+todos.buds
+todos.bud_dependencies
 todos.habits
 todos.habit_log
 ```
@@ -155,28 +190,38 @@ export TODO_DATABASE_URL="postgresql://localhost/yourdb"
 # See everything
 gv overview
 
-# Check stale inbox items
-gv inbox
+# Check seeds (inbox)
+gv seeds
 
 # Review blocked work
 gv blocked
 
-# Verify task alignment
+# Verify bud alignment
 gv why <id>
+
+# Run guided review
+gv review
 ```
 
 ### Daily Workflow
 
 ```bash
 # What can I do right now?
-gv now
+gv pulse
 
 # Pick high-impact work
 gv list --priority=high
 
 # Mark progress
-gv done <id>
+gv bloom <id>
 ```
+
+## Backward Compatibility
+
+For muscle memory, these aliases work:
+- `gv inbox` → `gv seeds`
+- `gv now` → `gv pulse`
+- `gv done <id>` → `gv bloom <id>`
 
 ## License
 

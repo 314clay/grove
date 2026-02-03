@@ -1,4 +1,9 @@
-"""Beads integration for syncing with external issue trackers."""
+"""Beads integration for syncing with external issue trackers.
+
+Maps between Grove's botanical naming and beads' issue tracking system:
+- Bud statuses: seed, dormant, budding, bloomed, mulch
+- Bead statuses: open, in_progress, hooked, closed, wont_fix, etc.
+"""
 
 import json
 import os
@@ -95,26 +100,26 @@ def read_beads_jsonl(beads_dir: Path) -> list[Bead]:
     return beads
 
 
-def map_bead_status_to_task_status(bead_status: str) -> str:
-    """Map a bead status to a task status.
+def map_bead_status_to_bud_status(bead_status: str) -> str:
+    """Map a bead status to a bud status.
 
     Bead statuses: open, in_progress, hooked, closed, etc.
-    Task statuses: inbox, active, done, dropped
+    Bud statuses: seed, dormant, budding, bloomed, mulch
     """
     status_map = {
-        "open": "inbox",
-        "in_progress": "active",
-        "hooked": "active",
-        "closed": "done",
-        "done": "done",
-        "wont_fix": "dropped",
-        "duplicate": "dropped",
+        "open": "seed",           # new beads come in as seeds
+        "in_progress": "budding", # actively being worked on
+        "hooked": "budding",      # hooked = being worked on
+        "closed": "bloomed",      # completed
+        "done": "bloomed",        # completed
+        "wont_fix": "mulch",      # abandoned
+        "duplicate": "mulch",     # abandoned
     }
-    return status_map.get(bead_status.lower(), "inbox")
+    return status_map.get(bead_status.lower(), "seed")
 
 
 def map_bead_priority_to_importance(priority: int) -> str:
-    """Map bead priority (1-4) to task importance (high, medium, low).
+    """Map bead priority (1-4) to bud priority (high, medium, low).
 
     Priority 1 = urgent/high
     Priority 2 = high
@@ -131,25 +136,26 @@ def map_bead_priority_to_importance(priority: int) -> str:
         return "low"
 
 
-def map_task_status_to_bead_status(task_status: str) -> str:
-    """Map a task status to a bead status.
+def map_bud_status_to_bead_status(bud_status: str) -> str:
+    """Map a bud status to a bead status.
 
-    Task statuses: inbox, active, done, dropped
+    Bud statuses: seed, dormant, budding, bloomed, mulch
     Bead statuses: open, in_progress, closed, wont_fix
     """
     status_map = {
-        "inbox": "open",
-        "active": "in_progress",
-        "done": "closed",
-        "dropped": "wont_fix",
+        "seed": "open",
+        "dormant": "open",        # ready but not started = still open
+        "budding": "in_progress",
+        "bloomed": "closed",
+        "mulch": "wont_fix",
     }
-    return status_map.get(task_status.lower(), "open")
+    return status_map.get(bud_status.lower(), "open")
 
 
-def map_task_priority_to_bead_priority(priority: str) -> int:
-    """Map task priority string to bead priority number.
+def map_bud_priority_to_bead_priority(priority: str) -> int:
+    """Map bud priority string to bead priority number.
 
-    Task priorities: urgent, high, medium, low
+    Bud priorities: urgent, high, medium, low
     Bead priorities: 1, 2, 3, 4
     """
     priority_map = {

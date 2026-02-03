@@ -1,4 +1,15 @@
-"""SQLAlchemy models for the todo system."""
+"""SQLAlchemy models for the Grove task system.
+
+Botanical naming scheme:
+- Groves: Life domains (Health, Career, etc.)
+- Trunks: Strategic initiatives within a grove
+- Fruits: Measurable outcomes (OKRs) for trunks
+- Branches: Projects within a trunk
+- Buds: Individual tasks/work items
+- Seeds: Unprocessed buds (status='seed')
+
+Bud status lifecycle: seed → dormant → budding → bloomed/mulch
+"""
 
 from datetime import datetime, date
 from typing import Optional
@@ -22,9 +33,9 @@ class Base(DeclarativeBase):
     pass
 
 
-class Area(Base):
-    """Life domains (Health, Career, etc.)."""
-    __tablename__ = "areas"
+class Grove(Base):
+    """Life domains (Health, Career, etc.) - the forests where your work grows."""
+    __tablename__ = "groves"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -37,19 +48,19 @@ class Area(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    initiatives: Mapped[list["Initiative"]] = relationship(back_populates="area")
-    projects: Mapped[list["Project"]] = relationship(back_populates="area")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="area")
+    trunks: Mapped[list["Trunk"]] = relationship(back_populates="grove")
+    branches: Mapped[list["Branch"]] = relationship(back_populates="grove")
+    buds: Mapped[list["Bud"]] = relationship(back_populates="grove")
 
 
-class Initiative(Base):
-    """Strategic goals within an area."""
-    __tablename__ = "initiatives"
+class Trunk(Base):
+    """Strategic goals within a grove - the main stems that support your branches."""
+    __tablename__ = "trunks"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    area_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.areas.id"))
-    parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.initiatives.id"))
+    grove_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.groves.id"))
+    parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.trunks.id"))
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="active")
@@ -59,20 +70,20 @@ class Initiative(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    area: Mapped[Optional["Area"]] = relationship(back_populates="initiatives")
-    parent: Mapped[Optional["Initiative"]] = relationship(remote_side=[id], backref="children")
-    key_results: Mapped[list["KeyResult"]] = relationship(back_populates="initiative")
-    projects: Mapped[list["Project"]] = relationship(back_populates="initiative")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="initiative")
+    grove: Mapped[Optional["Grove"]] = relationship(back_populates="trunks")
+    parent: Mapped[Optional["Trunk"]] = relationship(remote_side=[id], backref="children")
+    fruits: Mapped[list["Fruit"]] = relationship(back_populates="trunk")
+    branches: Mapped[list["Branch"]] = relationship(back_populates="trunk")
+    buds: Mapped[list["Bud"]] = relationship(back_populates="trunk")
 
 
-class KeyResult(Base):
-    """Measurable outcomes for initiatives."""
-    __tablename__ = "key_results"
+class Fruit(Base):
+    """Measurable outcomes for trunks (OKR-style) - the fruits that ripen as you progress."""
+    __tablename__ = "fruits"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    initiative_id: Mapped[int] = mapped_column(ForeignKey("todos.initiatives.id"), nullable=False)
+    trunk_id: Mapped[int] = mapped_column(ForeignKey("todos.trunks.id"), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     target_value: Mapped[Optional[int]] = mapped_column(Integer)
     current_value: Mapped[int] = mapped_column(Integer, default=0)
@@ -80,17 +91,17 @@ class KeyResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    initiative: Mapped["Initiative"] = relationship(back_populates="key_results")
+    trunk: Mapped["Trunk"] = relationship(back_populates="fruits")
 
 
-class Project(Base):
-    """Finite deliverables linked to initiatives."""
-    __tablename__ = "projects"
+class Branch(Base):
+    """Projects - branches that hold your buds."""
+    __tablename__ = "branches"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    initiative_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.initiatives.id"))
-    area_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.areas.id"))
+    trunk_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.trunks.id"))
+    grove_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.groves.id"))
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="active")
@@ -102,23 +113,31 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    initiative: Mapped[Optional["Initiative"]] = relationship(back_populates="projects")
-    area: Mapped[Optional["Area"]] = relationship(back_populates="projects")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+    trunk: Mapped[Optional["Trunk"]] = relationship(back_populates="branches")
+    grove: Mapped[Optional["Grove"]] = relationship(back_populates="branches")
+    buds: Mapped[list["Bud"]] = relationship(back_populates="branch")
 
 
-class Task(Base):
-    """Individual actionable items."""
-    __tablename__ = "tasks"
+class Bud(Base):
+    """Individual work items - buds that bloom into completed work.
+
+    Status lifecycle:
+    - seed: Raw capture, unprocessed (inbox)
+    - dormant: Clarified, ready to work on
+    - budding: Actively being worked on
+    - bloomed: Completed
+    - mulch: Dropped/abandoned (feeds future growth)
+    """
+    __tablename__ = "buds"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.projects.id"))
-    initiative_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.initiatives.id"))
-    area_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.areas.id"))
+    branch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.branches.id"))
+    trunk_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.trunks.id"))
+    grove_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.groves.id"))
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(20), default="inbox")
+    status: Mapped[str] = mapped_column(String(20), default="seed")
     priority: Mapped[str] = mapped_column(String(10), default="medium")
     story_points: Mapped[Optional[int]] = mapped_column(Integer)
     estimated_minutes: Mapped[Optional[int]] = mapped_column(Integer)
@@ -142,42 +161,42 @@ class Task(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
-    project: Mapped[Optional["Project"]] = relationship(back_populates="tasks")
-    initiative: Mapped[Optional["Initiative"]] = relationship(back_populates="tasks")
-    area: Mapped[Optional["Area"]] = relationship(back_populates="tasks")
-    blocked_by: Mapped[list["TaskDependency"]] = relationship(
-        foreign_keys="TaskDependency.task_id",
-        back_populates="task"
+    branch: Mapped[Optional["Branch"]] = relationship(back_populates="buds")
+    trunk: Mapped[Optional["Trunk"]] = relationship(back_populates="buds")
+    grove: Mapped[Optional["Grove"]] = relationship(back_populates="buds")
+    blocked_by: Mapped[list["BudDependency"]] = relationship(
+        foreign_keys="BudDependency.bud_id",
+        back_populates="bud"
     )
-    blocks: Mapped[list["TaskDependency"]] = relationship(
-        foreign_keys="TaskDependency.depends_on_id",
+    blocks: Mapped[list["BudDependency"]] = relationship(
+        foreign_keys="BudDependency.depends_on_id",
         back_populates="depends_on"
     )
 
 
-class TaskDependency(Base):
-    """Dependencies between tasks."""
-    __tablename__ = "task_dependencies"
+class BudDependency(Base):
+    """Dependencies between buds - which buds must bloom first."""
+    __tablename__ = "bud_dependencies"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    task_id: Mapped[int] = mapped_column(ForeignKey("todos.tasks.id"), nullable=False)
-    depends_on_id: Mapped[int] = mapped_column(ForeignKey("todos.tasks.id"), nullable=False)
+    bud_id: Mapped[int] = mapped_column(ForeignKey("todos.buds.id"), nullable=False)
+    depends_on_id: Mapped[int] = mapped_column(ForeignKey("todos.buds.id"), nullable=False)
     dependency_type: Mapped[str] = mapped_column(String(32), default="blocks")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    task: Mapped["Task"] = relationship(foreign_keys=[task_id], back_populates="blocked_by")
-    depends_on: Mapped["Task"] = relationship(foreign_keys=[depends_on_id], back_populates="blocks")
+    bud: Mapped["Bud"] = relationship(foreign_keys=[bud_id], back_populates="blocked_by")
+    depends_on: Mapped["Bud"] = relationship(foreign_keys=[depends_on_id], back_populates="blocks")
 
 
 class Habit(Base):
-    """Recurring habits separate from tasks."""
+    """Recurring habits separate from buds."""
     __tablename__ = "habits"
     __table_args__ = {"schema": "todos"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    area_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.areas.id"))
+    grove_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.groves.id"))
     frequency: Mapped[str] = mapped_column(String(20), default="daily")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

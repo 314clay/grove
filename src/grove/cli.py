@@ -1,4 +1,14 @@
-"""CLI entrypoint for the todo system."""
+"""CLI entrypoint for Grove - botanical task management.
+
+Naming scheme:
+- Groves: Life domains
+- Trunks: Strategic initiatives
+- Branches: Projects
+- Buds: Tasks (status: seed → dormant → budding → bloomed/mulch)
+- Fruits: Key results (OKRs)
+- Seeds: Unprocessed buds (gv seeds command)
+- Pulse: Check what's actionable (gv pulse command)
+"""
 
 import click
 from rich.console import Console
@@ -9,155 +19,263 @@ console = Console()
 @click.group()
 @click.version_option()
 def main():
-    """Grove - Personal todo system with hierarchical task management.
-    
-    Commands for managing tasks, projects, areas, and initiatives.
+    """Grove - Botanical task management with hierarchical alignment.
+
+    Your work grows from seeds to blooming buds on branches,
+    supported by trunks, all within your groves.
+
+    Commands for managing buds, branches, trunks, and groves.
     """
     pass
 
 
+# =============================================================================
+# BUD MANAGEMENT (Tasks)
+# =============================================================================
+
+
 @main.command()
 @click.argument("title")
-@click.option("--project", "-p", type=int, help="Assign to project ID")
-@click.option("--priority", type=click.Choice(["urgent", "high", "medium", "low"]), default="medium", help="Task priority")
+@click.option("--branch", "-b", type=int, help="Plant on branch (project) ID")
+@click.option("--priority", type=click.Choice(["urgent", "high", "medium", "low"]), default="medium", help="Bud priority")
 @click.option("--context", "-c", help="Context tag")
-def add(title: str, project: int | None, priority: str, context: str | None):
-    """Add a task to the inbox.
+def add(title: str, branch: int | None, priority: str, context: str | None):
+    """Plant a new seed (add to inbox).
 
-    Example: gv add "Review PR" --project=1 --priority=high
+    Seeds are raw captures that haven't been clarified yet.
+    Process them with 'gv seeds' to decide what they become.
+
+    Example: gv add "Review PR" --branch=1 --priority=high
     """
     from grove.db import get_session
-    from grove.models import Task
+    from grove.models import Bud
 
     with get_session() as session:
-        task = Task(
+        bud = Bud(
             title=title,
-            project_id=project,
+            branch_id=branch,
             priority=priority,
             context=context,
-            status="inbox",
+            status="seed",
         )
-        session.add(task)
+        session.add(bud)
         session.commit()
-        console.print(f"[green]Added:[/green] {task.title} (id: {task.id})")
+        console.print(f"[green]Planted seed:[/green] {bud.title} (id: {bud.id})")
 
 
 @main.command()
-def inbox():
-    """Show unclarified inbox items."""
+def seeds():
+    """Show unprocessed seeds (inbox items).
+
+    Seeds are raw captures waiting to be clarified.
+    Decide: Is this a bud? A new branch? Or mulch?
+    """
     from grove.db import get_session
-    from grove.models import Task
-    
+    from grove.models import Bud
+
     with get_session() as session:
-        tasks = session.query(Task).filter(Task.status == "inbox").all()
-        if not tasks:
-            console.print("[dim]Inbox empty[/dim]")
+        buds = session.query(Bud).filter(Bud.status == "seed").all()
+        if not buds:
+            console.print("[dim]No seeds to process[/dim]")
             return
-        for task in tasks:
-            console.print(f"  {task.id}: {task.title}")
+        console.print("[bold]Seeds (unprocessed):[/bold]")
+        for bud in buds:
+            console.print(f"  {bud.id}: {bud.title}")
 
 
 @main.command(name="list")
-def list_tasks():
-    """Show all actionable tasks."""
+def list_buds():
+    """Show all budding (active) work."""
     from grove.db import get_session
-    from grove.models import Task
-    
+    from grove.models import Bud
+
     with get_session() as session:
-        tasks = session.query(Task).filter(Task.status == "active").all()
-        if not tasks:
-            console.print("[dim]No active tasks[/dim]")
+        buds = session.query(Bud).filter(Bud.status == "budding").all()
+        if not buds:
+            console.print("[dim]No buds currently growing[/dim]")
             return
-        for task in tasks:
-            console.print(f"  {task.id}: {task.title}")
+        console.print("[bold]Budding (in progress):[/bold]")
+        for bud in buds:
+            console.print(f"  {bud.id}: {bud.title}")
 
 
 @main.command()
-def now():
-    """Show actionable and unblocked tasks."""
-    from sqlalchemy import and_, exists, select
+def pulse():
+    """Check the pulse - show actionable, unblocked buds.
+
+    These are buds that are budding (active) and not blocked
+    by other incomplete buds.
+    """
+    from sqlalchemy import and_, select
     from grove.db import get_session
-    from grove.models import Task, TaskDependency
+    from grove.models import Bud, BudDependency
 
     with get_session() as session:
-        # Subquery: tasks that have incomplete blocking dependencies
-        blocked_subq = select(TaskDependency.task_id).join(
-            Task, TaskDependency.depends_on_id == Task.id
+        # Subquery: buds that have incomplete blocking dependencies
+        blocked_subq = select(BudDependency.bud_id).join(
+            Bud, BudDependency.depends_on_id == Bud.id
         ).where(
             and_(
-                TaskDependency.dependency_type == "blocks",
-                Task.status != "done"
+                BudDependency.dependency_type == "blocks",
+                Bud.status != "bloomed"
             )
         ).scalar_subquery()
 
-        # Get active tasks that are NOT blocked
-        tasks = session.query(Task).filter(
-            Task.status == "active",
-            ~Task.id.in_(blocked_subq)
+        # Get budding buds that are NOT blocked
+        buds = session.query(Bud).filter(
+            Bud.status == "budding",
+            ~Bud.id.in_(blocked_subq)
         ).all()
 
-        if not tasks:
-            console.print("[dim]Nothing to do right now[/dim]")
+        if not buds:
+            console.print("[dim]Nothing ready to work on right now[/dim]")
             return
-        for task in tasks:
-            console.print(f"  {task.id}: {task.title}")
+        console.print("[bold]Ready to bloom:[/bold]")
+        for bud in buds:
+            console.print(f"  {bud.id}: {bud.title}")
 
 
 @main.command()
-@click.argument("task_id", type=int)
-def done(task_id: int):
-    """Mark a task as complete."""
+@click.argument("bud_id", type=int)
+def bloom(bud_id: int):
+    """Mark a bud as bloomed (complete).
+
+    Example: gv bloom 1
+    """
+    from datetime import datetime
     from grove.db import get_session
-    from grove.models import Task
+    from grove.models import Bud
 
     with get_session() as session:
-        task = session.query(Task).filter(Task.id == task_id).first()
-        if not task:
-            console.print(f"[red]Task not found:[/red] {task_id}")
+        bud = session.query(Bud).filter(Bud.id == bud_id).first()
+        if not bud:
+            console.print(f"[red]Bud not found:[/red] {bud_id}")
             return
-        task.status = "done"
+        bud.status = "bloomed"
+        bud.completed_at = datetime.utcnow()
         session.commit()
-        console.print(f"[green]Completed:[/green] {task.title}")
+        console.print(f"[green]🌸 Bloomed:[/green] {bud.title}")
+
+
+@main.command()
+@click.argument("bud_id", type=int)
+def mulch(bud_id: int):
+    """Drop a bud to the mulch (abandon it).
+
+    Mulched buds feed future growth - nothing is wasted.
+
+    Example: gv mulch 1
+    """
+    from grove.db import get_session
+    from grove.models import Bud
+
+    with get_session() as session:
+        bud = session.query(Bud).filter(Bud.id == bud_id).first()
+        if not bud:
+            console.print(f"[red]Bud not found:[/red] {bud_id}")
+            return
+        bud.status = "mulch"
+        session.commit()
+        console.print(f"[yellow]Mulched:[/yellow] {bud.title}")
+
+
+@main.command()
+@click.argument("bud_id", type=int)
+def start(bud_id: int):
+    """Start working on a bud (move to budding status).
+
+    Example: gv start 1
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Bud
+
+    with get_session() as session:
+        bud = session.query(Bud).filter(Bud.id == bud_id).first()
+        if not bud:
+            console.print(f"[red]Bud not found:[/red] {bud_id}")
+            return
+        if bud.status == "budding":
+            console.print(f"[yellow]Already budding:[/yellow] {bud.title}")
+            return
+        bud.status = "budding"
+        bud.started_at = datetime.utcnow()
+        session.commit()
+        console.print(f"[green]Started budding:[/green] {bud.title}")
+
+
+@main.command()
+@click.argument("bud_id", type=int)
+def plant(bud_id: int):
+    """Plant a seed (move from seed to dormant status).
+
+    This clarifies a seed - it's now a proper bud, ready to grow.
+
+    Example: gv plant 1
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Bud
+
+    with get_session() as session:
+        bud = session.query(Bud).filter(Bud.id == bud_id).first()
+        if not bud:
+            console.print(f"[red]Bud not found:[/red] {bud_id}")
+            return
+        if bud.status != "seed":
+            console.print(f"[yellow]Not a seed:[/yellow] {bud.title} (status: {bud.status})")
+            return
+        bud.status = "dormant"
+        bud.clarified_at = datetime.utcnow()
+        session.commit()
+        console.print(f"[green]Planted:[/green] {bud.title} (now dormant, ready to grow)")
+
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
 
 
 @main.command()
 @click.argument("blocker_id", type=int)
 @click.argument("blocked_id", type=int)
 def blocks(blocker_id: int, blocked_id: int):
-    """Make one task block another.
+    """Make one bud block another.
+
+    The first bud must bloom before the second can start.
 
     Example: gv blocks 1 2
-    (task 1 must be completed before task 2 can start)
+    (bud 1 must bloom before bud 2 can start)
     """
     from grove.db import get_session
-    from grove.models import Task, TaskDependency
+    from grove.models import Bud, BudDependency
 
     with get_session() as session:
-        blocker = session.query(Task).filter(Task.id == blocker_id).first()
-        blocked = session.query(Task).filter(Task.id == blocked_id).first()
+        blocker = session.query(Bud).filter(Bud.id == blocker_id).first()
+        blocked = session.query(Bud).filter(Bud.id == blocked_id).first()
 
         if not blocker:
-            console.print(f"[red]Blocker task not found:[/red] {blocker_id}")
+            console.print(f"[red]Blocker bud not found:[/red] {blocker_id}")
             return
         if not blocked:
-            console.print(f"[red]Blocked task not found:[/red] {blocked_id}")
+            console.print(f"[red]Blocked bud not found:[/red] {blocked_id}")
             return
         if blocker_id == blocked_id:
-            console.print("[red]A task cannot block itself[/red]")
+            console.print("[red]A bud cannot block itself[/red]")
             return
 
         # Check if dependency already exists
-        existing = session.query(TaskDependency).filter(
-            TaskDependency.task_id == blocked_id,
-            TaskDependency.depends_on_id == blocker_id
+        existing = session.query(BudDependency).filter(
+            BudDependency.bud_id == blocked_id,
+            BudDependency.depends_on_id == blocker_id
         ).first()
 
         if existing:
-            console.print(f"[yellow]Dependency already exists[/yellow]")
+            console.print("[yellow]Dependency already exists[/yellow]")
             return
 
-        dep = TaskDependency(
-            task_id=blocked_id,
+        dep = BudDependency(
+            bud_id=blocked_id,
             depends_on_id=blocker_id,
             dependency_type="blocks"
         )
@@ -170,21 +288,21 @@ def blocks(blocker_id: int, blocked_id: int):
 @click.argument("blocker_id", type=int)
 @click.argument("blocked_id", type=int)
 def unblock(blocker_id: int, blocked_id: int):
-    """Remove a blocking relationship between tasks.
+    """Remove a blocking relationship between buds.
 
     Example: gv unblock 1 2
     """
     from grove.db import get_session
-    from grove.models import TaskDependency
+    from grove.models import BudDependency
 
     with get_session() as session:
-        dep = session.query(TaskDependency).filter(
-            TaskDependency.task_id == blocked_id,
-            TaskDependency.depends_on_id == blocker_id
+        dep = session.query(BudDependency).filter(
+            BudDependency.bud_id == blocked_id,
+            BudDependency.depends_on_id == blocker_id
         ).first()
 
         if not dep:
-            console.print(f"[yellow]No blocking relationship found[/yellow]")
+            console.print("[yellow]No blocking relationship found[/yellow]")
             return
 
         session.delete(dep)
@@ -193,45 +311,45 @@ def unblock(blocker_id: int, blocked_id: int):
 
 
 @main.command()
-@click.argument("task_ids", nargs=-1, required=True, type=int)
-def chain(task_ids: tuple):
-    """Chain tasks in sequence (each blocks the next).
+@click.argument("bud_ids", nargs=-1, required=True, type=int)
+def chain(bud_ids: tuple):
+    """Chain buds in sequence (each blocks the next).
 
     Example: gv chain 1 2 3
-    (1 → 2 → 3)
+    (1 must bloom before 2, 2 must bloom before 3)
     """
     from grove.db import get_session
-    from grove.models import Task, TaskDependency
+    from grove.models import Bud, BudDependency
 
-    if len(task_ids) < 2:
-        console.print("[red]Need at least 2 tasks to chain[/red]")
+    if len(bud_ids) < 2:
+        console.print("[red]Need at least 2 buds to chain[/red]")
         return
 
     with get_session() as session:
-        # Verify all tasks exist
-        tasks = []
-        for tid in task_ids:
-            task = session.query(Task).filter(Task.id == tid).first()
-            if not task:
-                console.print(f"[red]Task not found:[/red] {tid}")
+        # Verify all buds exist
+        buds = []
+        for bid in bud_ids:
+            bud = session.query(Bud).filter(Bud.id == bid).first()
+            if not bud:
+                console.print(f"[red]Bud not found:[/red] {bid}")
                 return
-            tasks.append(task)
+            buds.append(bud)
 
         # Create chain of dependencies
         created = 0
-        for i in range(len(tasks) - 1):
-            blocker = tasks[i]
-            blocked = tasks[i + 1]
+        for i in range(len(buds) - 1):
+            blocker = buds[i]
+            blocked = buds[i + 1]
 
             # Check if dependency already exists
-            existing = session.query(TaskDependency).filter(
-                TaskDependency.task_id == blocked.id,
-                TaskDependency.depends_on_id == blocker.id
+            existing = session.query(BudDependency).filter(
+                BudDependency.bud_id == blocked.id,
+                BudDependency.depends_on_id == blocker.id
             ).first()
 
             if not existing:
-                dep = TaskDependency(
-                    task_id=blocked.id,
+                dep = BudDependency(
+                    bud_id=blocked.id,
                     depends_on_id=blocker.id,
                     dependency_type="blocks"
                 )
@@ -240,263 +358,320 @@ def chain(task_ids: tuple):
 
         session.commit()
 
-        chain_display = " → ".join(t.title for t in tasks)
+        chain_display = " → ".join(b.title for b in buds)
         console.print(f"[green]Chained ({created} new):[/green] {chain_display}")
 
 
 @main.command()
 def blocked():
-    """Show tasks that are blocked by incomplete tasks."""
+    """Show buds that are blocked by incomplete buds."""
     from grove.db import get_session
-    from grove.models import Task, TaskDependency
+    from grove.models import Bud, BudDependency
     from sqlalchemy.orm import aliased
 
     with get_session() as session:
-        # Find tasks that have incomplete blockers
-        BlockingTask = aliased(Task)
-        blocked_tasks = session.query(Task).join(
-            TaskDependency, Task.id == TaskDependency.task_id
+        # Find buds that have incomplete blockers
+        BlockingBud = aliased(Bud)
+        blocked_buds = session.query(Bud).join(
+            BudDependency, Bud.id == BudDependency.bud_id
         ).join(
-            BlockingTask, TaskDependency.depends_on_id == BlockingTask.id, isouter=True
+            BlockingBud, BudDependency.depends_on_id == BlockingBud.id, isouter=True
         ).filter(
-            TaskDependency.dependency_type == "blocks",
-            BlockingTask.status != "done"
+            BudDependency.dependency_type == "blocks",
+            BlockingBud.status != "bloomed"
         ).distinct().all()
 
-        if not blocked_tasks:
-            console.print("[dim]No blocked tasks[/dim]")
+        if not blocked_buds:
+            console.print("[dim]No blocked buds[/dim]")
             return
 
-        for task in blocked_tasks:
-            # Get what's blocking this task
-            blockers = session.query(Task).join(
-                TaskDependency, Task.id == TaskDependency.depends_on_id
+        console.print("[bold]Blocked buds:[/bold]")
+        for bud in blocked_buds:
+            # Get what's blocking this bud
+            blockers = session.query(Bud).join(
+                BudDependency, Bud.id == BudDependency.depends_on_id
             ).filter(
-                TaskDependency.task_id == task.id,
-                TaskDependency.dependency_type == "blocks",
-                Task.status != "done"
+                BudDependency.bud_id == bud.id,
+                BudDependency.dependency_type == "blocks",
+                Bud.status != "bloomed"
             ).all()
 
             if blockers:
                 blocker_titles = ", ".join(b.title for b in blockers)
-                console.print(f"  {task.id}: {task.title}")
-                console.print(f"    [dim]blocked by:[/dim] {blocker_titles}")
+                console.print(f"  {bud.id}: {bud.title}")
+                console.print(f"    [dim]waiting for:[/dim] {blocker_titles}")
+
+
+# =============================================================================
+# WHY - Trace hierarchy
+# =============================================================================
 
 
 @main.command()
-@click.argument("task_id", type=int)
-def why(task_id: int):
-    """Trace task up through project → initiative → area.
+@click.argument("bud_id", type=int)
+def why(bud_id: int):
+    """Trace a bud up through branch → trunk → grove.
 
-    Shows why a task exists by displaying its full hierarchy.
-    Tasks can link directly to area/initiative or via project.
+    Shows why a bud exists by displaying its full hierarchy.
+    Buds can link directly to grove/trunk or via branch.
 
     Example: gv why 123
     """
     from grove.db import get_session
-    from grove.models import Task, Project, Initiative, Area
+    from grove.models import Bud, Branch, Trunk, Grove
 
     with get_session() as session:
-        task = session.query(Task).filter(Task.id == task_id).first()
-        if not task:
-            console.print(f"[red]Task not found:[/red] {task_id}")
+        bud = session.query(Bud).filter(Bud.id == bud_id).first()
+        if not bud:
+            console.print(f"[red]Bud not found:[/red] {bud_id}")
             return
 
         console.print()
-        console.print(f"[bold cyan]Task:[/bold cyan] {task.title}")
-        console.print(f"  [dim]id: {task.id} | status: {task.status} | priority: {task.priority}[/dim]")
+        console.print(f"[bold cyan]Bud:[/bold cyan] {bud.title}")
+        console.print(f"  [dim]id: {bud.id} | status: {bud.status} | priority: {bud.priority}[/dim]")
 
         # Track what we've shown to avoid duplicates
-        shown_project = False
-        shown_initiative = False
-        shown_area = False
+        shown_branch = False
+        shown_trunk = False
+        shown_grove = False
 
-        # Show project if linked
-        if task.project_id:
-            project = session.query(Project).filter(Project.id == task.project_id).first()
-            if project:
-                shown_project = True
+        # Show branch if linked
+        if bud.branch_id:
+            branch = session.query(Branch).filter(Branch.id == bud.branch_id).first()
+            if branch:
+                shown_branch = True
                 console.print()
-                console.print(f"  [bold yellow]↑ Project:[/bold yellow] {project.title}")
-                console.print(f"    [dim]id: {project.id} | status: {project.status}[/dim]")
-                if project.done_when:
-                    console.print(f"    [dim]done when: {project.done_when}[/dim]")
+                console.print(f"  [bold yellow]↑ Branch:[/bold yellow] {branch.title}")
+                console.print(f"    [dim]id: {branch.id} | status: {branch.status}[/dim]")
+                if branch.done_when:
+                    console.print(f"    [dim]blooms when: {branch.done_when}[/dim]")
 
-                # Show initiative via project
-                if project.initiative_id:
-                    initiative = session.query(Initiative).filter(Initiative.id == project.initiative_id).first()
-                    if initiative:
-                        shown_initiative = True
+                # Show trunk via branch
+                if branch.trunk_id:
+                    trunk = session.query(Trunk).filter(Trunk.id == branch.trunk_id).first()
+                    if trunk:
+                        shown_trunk = True
                         console.print()
-                        console.print(f"    [bold magenta]↑ Initiative:[/bold magenta] {initiative.title}")
-                        console.print(f"      [dim]id: {initiative.id} | status: {initiative.status}[/dim]")
-                        if initiative.target_date:
-                            console.print(f"      [dim]target: {initiative.target_date.strftime('%Y-%m-%d')}[/dim]")
+                        console.print(f"    [bold magenta]↑ Trunk:[/bold magenta] {trunk.title}")
+                        console.print(f"      [dim]id: {trunk.id} | status: {trunk.status}[/dim]")
+                        if trunk.target_date:
+                            console.print(f"      [dim]target: {trunk.target_date.strftime('%Y-%m-%d')}[/dim]")
 
-                        # Show area via initiative
-                        if initiative.area_id:
-                            area = session.query(Area).filter(Area.id == initiative.area_id).first()
-                            if area:
-                                shown_area = True
-                                icon = area.icon or "📁"
+                        # Show grove via trunk
+                        if trunk.grove_id:
+                            grove = session.query(Grove).filter(Grove.id == trunk.grove_id).first()
+                            if grove:
+                                shown_grove = True
+                                icon = grove.icon or "🌳"
                                 console.print()
-                                console.print(f"      [bold green]↑ Area:[/bold green] {icon} {area.name}")
-                                console.print(f"        [dim]id: {area.id}[/dim]")
-                                if area.description:
-                                    console.print(f"        [dim]{area.description}[/dim]")
+                                console.print(f"      [bold green]↑ Grove:[/bold green] {icon} {grove.name}")
+                                console.print(f"        [dim]id: {grove.id}[/dim]")
+                                if grove.description:
+                                    console.print(f"        [dim]{grove.description}[/dim]")
 
-        # Show direct initiative link if not shown via project
-        if task.initiative_id and not shown_initiative:
-            initiative = session.query(Initiative).filter(Initiative.id == task.initiative_id).first()
-            if initiative:
-                shown_initiative = True
+        # Show direct trunk link if not shown via branch
+        if bud.trunk_id and not shown_trunk:
+            trunk = session.query(Trunk).filter(Trunk.id == bud.trunk_id).first()
+            if trunk:
+                shown_trunk = True
                 console.print()
-                console.print(f"  [bold magenta]↑ Initiative (direct):[/bold magenta] {initiative.title}")
-                console.print(f"    [dim]id: {initiative.id} | status: {initiative.status}[/dim]")
-                if initiative.target_date:
-                    console.print(f"    [dim]target: {initiative.target_date.strftime('%Y-%m-%d')}[/dim]")
+                console.print(f"  [bold magenta]↑ Trunk (direct):[/bold magenta] {trunk.title}")
+                console.print(f"    [dim]id: {trunk.id} | status: {trunk.status}[/dim]")
+                if trunk.target_date:
+                    console.print(f"    [dim]target: {trunk.target_date.strftime('%Y-%m-%d')}[/dim]")
 
-                # Show area via direct initiative
-                if initiative.area_id and not shown_area:
-                    area = session.query(Area).filter(Area.id == initiative.area_id).first()
-                    if area:
-                        shown_area = True
-                        icon = area.icon or "📁"
+                # Show grove via direct trunk
+                if trunk.grove_id and not shown_grove:
+                    grove = session.query(Grove).filter(Grove.id == trunk.grove_id).first()
+                    if grove:
+                        shown_grove = True
+                        icon = grove.icon or "🌳"
                         console.print()
-                        console.print(f"    [bold green]↑ Area:[/bold green] {icon} {area.name}")
-                        console.print(f"      [dim]id: {area.id}[/dim]")
-                        if area.description:
-                            console.print(f"      [dim]{area.description}[/dim]")
+                        console.print(f"    [bold green]↑ Grove:[/bold green] {icon} {grove.name}")
+                        console.print(f"      [dim]id: {grove.id}[/dim]")
+                        if grove.description:
+                            console.print(f"      [dim]{grove.description}[/dim]")
 
-        # Show direct area link if not shown via initiative
-        if task.area_id and not shown_area:
-            area = session.query(Area).filter(Area.id == task.area_id).first()
-            if area:
-                icon = area.icon or "📁"
+        # Show direct grove link if not shown via trunk
+        if bud.grove_id and not shown_grove:
+            grove = session.query(Grove).filter(Grove.id == bud.grove_id).first()
+            if grove:
+                icon = grove.icon or "🌳"
                 console.print()
-                console.print(f"  [bold green]↑ Area (direct):[/bold green] {icon} {area.name}")
-                console.print(f"    [dim]id: {area.id}[/dim]")
-                if area.description:
-                    console.print(f"    [dim]{area.description}[/dim]")
+                console.print(f"  [bold green]↑ Grove (direct):[/bold green] {icon} {grove.name}")
+                console.print(f"    [dim]id: {grove.id}[/dim]")
+                if grove.description:
+                    console.print(f"    [dim]{grove.description}[/dim]")
 
         # If no links at all
-        if not task.project_id and not task.initiative_id and not task.area_id:
+        if not bud.branch_id and not bud.trunk_id and not bud.grove_id:
             console.print()
-            console.print("[dim]This task is not linked to any project, initiative, or area.[/dim]")
+            console.print("[dim]This bud is not planted on any branch, trunk, or grove.[/dim]")
 
         console.print()
 
 
+# =============================================================================
+# BRANCH (Project) MANAGEMENT
+# =============================================================================
+
+
 @main.group()
-def project():
-    """Manage projects."""
+def branch():
+    """Manage branches (projects)."""
     pass
 
 
-@project.command()
-@click.argument("project_id", type=int)
+@branch.command()
+@click.argument("branch_id", type=int)
 @click.argument("beads_path")
-def link(project_id: int, beads_path: str):
-    """Link a project to a beads repository path.
+def link(branch_id: int, beads_path: str):
+    """Link a branch to a beads repository path.
 
-    Sets the beads_repo field on a project, enabling beads integration
-    for tracking AI-native issues associated with this project.
+    Sets the beads_repo field on a branch, enabling beads integration
+    for tracking AI-native issues associated with this branch.
 
-    Example: gv project link 1 /path/to/.beads
-    Example: gv project link 1 ../shared/.beads
+    Example: gv branch link 1 /path/to/.beads
+    Example: gv branch link 1 ../shared/.beads
     """
     import os
     from grove.db import get_session
-    from grove.models import Project
+    from grove.models import Branch
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
             return
 
         # Resolve relative paths to absolute
         if not os.path.isabs(beads_path):
             beads_path = os.path.abspath(beads_path)
 
-        proj.beads_repo = beads_path
+        br.beads_repo = beads_path
         session.commit()
-        console.print(f"[green]Linked:[/green] {proj.title} → {beads_path}")
+        console.print(f"[green]Linked:[/green] {br.title} → {beads_path}")
 
 
-@project.command(name="list")
-def list_projects():
-    """List all projects with their beads links."""
+@branch.command(name="list")
+def list_branches():
+    """List all branches with their beads links."""
     from grove.db import get_session
-    from grove.models import Project
+    from grove.models import Branch
 
     with get_session() as session:
-        projects = session.query(Project).order_by(Project.title).all()
-        if not projects:
-            console.print("[dim]No projects[/dim]")
+        branches = session.query(Branch).order_by(Branch.title).all()
+        if not branches:
+            console.print("[dim]No branches[/dim]")
             return
 
-        for proj in projects:
-            status_icon = "●" if proj.status == "done" else "○"
-            beads_info = f" → {proj.beads_repo}" if proj.beads_repo else ""
-            console.print(f"  {proj.id}: {status_icon} {proj.title}[dim]{beads_info}[/dim]")
+        console.print("[bold]Branches:[/bold]")
+        for br in branches:
+            status_icon = "●" if br.status == "completed" else "○"
+            beads_info = f" → {br.beads_repo}" if br.beads_repo else ""
+            console.print(f"  {br.id}: {status_icon} {br.title}[dim]{beads_info}[/dim]")
 
 
-@project.command()
-@click.argument("project_id", type=int)
-def show(project_id: int):
-    """Show project details including beads link."""
+@branch.command()
+@click.argument("branch_id", type=int)
+def show(branch_id: int):
+    """Show branch details including beads link."""
     from grove.db import get_session
-    from grove.models import Project, Task
+    from grove.models import Branch, Bud
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
             return
 
         console.print()
-        console.print(f"[bold yellow]Project:[/bold yellow] {proj.title}")
-        console.print(f"  [dim]id: {proj.id} | status: {proj.status} | priority: {proj.priority}[/dim]")
-        if proj.description:
-            console.print(f"  [dim]{proj.description}[/dim]")
-        if proj.done_when:
-            console.print(f"  [dim]done when: {proj.done_when}[/dim]")
-        if proj.target_date:
-            console.print(f"  [dim]target: {proj.target_date.strftime('%Y-%m-%d')}[/dim]")
-        if proj.beads_repo:
-            console.print(f"  [cyan]beads:[/cyan] {proj.beads_repo}")
+        console.print(f"[bold yellow]Branch:[/bold yellow] {br.title}")
+        console.print(f"  [dim]id: {br.id} | status: {br.status} | priority: {br.priority}[/dim]")
+        if br.description:
+            console.print(f"  [dim]{br.description}[/dim]")
+        if br.done_when:
+            console.print(f"  [dim]blooms when: {br.done_when}[/dim]")
+        if br.target_date:
+            console.print(f"  [dim]target: {br.target_date.strftime('%Y-%m-%d')}[/dim]")
+        if br.beads_repo:
+            console.print(f"  [cyan]beads:[/cyan] {br.beads_repo}")
         else:
-            console.print(f"  [dim]beads: not linked[/dim]")
+            console.print("  [dim]beads: not linked[/dim]")
 
-        # Show task count
-        task_count = session.query(Task).filter(Task.project_id == proj.id).count()
-        done_count = session.query(Task).filter(Task.project_id == proj.id, Task.status == "done").count()
-        console.print(f"  [dim]tasks: {done_count}/{task_count}[/dim]")
+        # Show bud count
+        bud_count = session.query(Bud).filter(Bud.branch_id == br.id).count()
+        bloomed_count = session.query(Bud).filter(Bud.branch_id == br.id, Bud.status == "bloomed").count()
+        console.print(f"  [dim]buds: {bloomed_count}/{bud_count} bloomed[/dim]")
         console.print()
 
 
-@project.command()
-@click.argument("project_id", type=int)
-def unlink(project_id: int):
-    """Remove beads link from a project."""
+@branch.command(name="new")
+@click.argument("title")
+@click.option("--trunk", "-t", "trunk_id", type=int, help="Link to trunk ID")
+@click.option("--grove", "-g", "grove_id", type=int, help="Link to grove ID")
+@click.option("--description", "-d", help="Branch description")
+@click.option("--done-when", help="Completion criteria")
+def branch_new(title: str, trunk_id: int | None, grove_id: int | None, description: str | None, done_when: str | None):
+    """Create a new branch (project).
+
+    Example: gv branch new "Auth System" --trunk=1
+    Example: gv branch new "Side Project" --grove=2
+    """
     from grove.db import get_session
-    from grove.models import Project
+    from grove.models import Branch, Trunk, Grove
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
-            return
+        if trunk_id:
+            trunk = session.query(Trunk).filter(Trunk.id == trunk_id).first()
+            if not trunk:
+                console.print(f"[red]Trunk not found:[/red] {trunk_id}")
+                return
 
-        if not proj.beads_repo:
-            console.print(f"[yellow]Project not linked to beads[/yellow]")
-            return
+        if grove_id:
+            grove = session.query(Grove).filter(Grove.id == grove_id).first()
+            if not grove:
+                console.print(f"[red]Grove not found:[/red] {grove_id}")
+                return
 
-        old_path = proj.beads_repo
-        proj.beads_repo = None
+        br = Branch(
+            title=title,
+            trunk_id=trunk_id,
+            grove_id=grove_id,
+            description=description,
+            done_when=done_when,
+        )
+        session.add(br)
         session.commit()
-        console.print(f"[green]Unlinked:[/green] {proj.title} (was: {old_path})")
+        console.print(f"[green]Created branch:[/green] {br.id}: {title}")
+
+
+@branch.command()
+@click.argument("branch_id", type=int)
+def unlink(branch_id: int):
+    """Remove beads link from a branch."""
+    from grove.db import get_session
+    from grove.models import Branch
+
+    with get_session() as session:
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
+            return
+
+        if not br.beads_repo:
+            console.print("[yellow]Branch not linked to beads[/yellow]")
+            return
+
+        old_path = br.beads_repo
+        br.beads_repo = None
+        session.commit()
+        console.print(f"[green]Unlinked:[/green] {br.title} (was: {old_path})")
+
+
+# =============================================================================
+# BEADS INTEGRATION
+# =============================================================================
 
 
 @main.group()
@@ -506,14 +681,14 @@ def beads():
 
 
 @beads.command()
-@click.argument("project_id", type=int)
-@click.argument("task_ids", nargs=-1, type=int)
+@click.argument("branch_id", type=int)
+@click.argument("bud_ids", nargs=-1, type=int)
 @click.option("--dry-run", is_flag=True, help="Show what would be pushed without creating issues")
-def push(project_id: int, task_ids: tuple, dry_run: bool):
-    """Push tasks to beads in the linked repository.
+def push(branch_id: int, bud_ids: tuple, dry_run: bool):
+    """Push buds to beads in the linked repository.
 
-    Exports tasks from a project as beads issues. If task_ids are provided,
-    only those tasks are pushed. Otherwise, all active tasks in the project
+    Exports buds from a branch as beads issues. If bud_ids are provided,
+    only those buds are pushed. Otherwise, all seed/budding buds in the branch
     are pushed.
 
     Example: gv beads push 1
@@ -522,46 +697,46 @@ def push(project_id: int, task_ids: tuple, dry_run: bool):
     import os
     import subprocess
     from grove.db import get_session
-    from grove.models import Project, Task
+    from grove.models import Branch, Bud
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
             return
 
-        if not proj.beads_repo:
-            console.print(f"[red]Project not linked to beads.[/red] Use 't project link' first.")
+        if not br.beads_repo:
+            console.print("[red]Branch not linked to beads.[/red] Use 'gv branch link' first.")
             return
 
         # Verify beads path exists
-        beads_path = proj.beads_repo
+        beads_path = br.beads_repo
         if not os.path.isdir(beads_path):
             console.print(f"[red]Beads directory not found:[/red] {beads_path}")
             return
 
-        # Get tasks to push
-        if task_ids:
-            tasks = session.query(Task).filter(
-                Task.id.in_(task_ids),
-                Task.project_id == project_id
+        # Get buds to push
+        if bud_ids:
+            buds = session.query(Bud).filter(
+                Bud.id.in_(bud_ids),
+                Bud.branch_id == branch_id
             ).all()
-            if len(tasks) != len(task_ids):
-                found_ids = {t.id for t in tasks}
-                missing = [tid for tid in task_ids if tid not in found_ids]
-                console.print(f"[yellow]Warning: Tasks not found in project: {missing}[/yellow]")
+            if len(buds) != len(bud_ids):
+                found_ids = {b.id for b in buds}
+                missing = [bid for bid in bud_ids if bid not in found_ids]
+                console.print(f"[yellow]Warning: Buds not found in branch: {missing}[/yellow]")
         else:
-            # Get all active tasks in the project
-            tasks = session.query(Task).filter(
-                Task.project_id == project_id,
-                Task.status.in_(["inbox", "active"])
+            # Get all seed/budding buds in the branch
+            buds = session.query(Bud).filter(
+                Bud.branch_id == branch_id,
+                Bud.status.in_(["seed", "budding"])
             ).all()
 
-        if not tasks:
-            console.print("[dim]No tasks to push[/dim]")
+        if not buds:
+            console.print("[dim]No buds to push[/dim]")
             return
 
-        console.print(f"[cyan]Pushing {len(tasks)} task(s) to:[/cyan] {beads_path}")
+        console.print(f"[cyan]Pushing {len(buds)} bud(s) to:[/cyan] {beads_path}")
         console.print()
 
         # Map priority strings to beads priority numbers
@@ -573,28 +748,28 @@ def push(project_id: int, task_ids: tuple, dry_run: bool):
         }
 
         pushed = 0
-        for task in tasks:
+        for bud in buds:
             # Build bd create command
             cmd = [
                 "bd", "create",
                 "--db", os.path.join(beads_path, "beads.db"),
-                "--title", task.title,
-                "--priority", str(priority_map.get(task.priority, 3)),
+                "--title", bud.title,
+                "--priority", str(priority_map.get(bud.priority, 3)),
                 "--type", "task",
             ]
 
             # Add description if present
-            if task.description:
-                cmd.extend(["--description", task.description])
+            if bud.description:
+                cmd.extend(["--description", bud.description])
 
             # Add notes about source
-            source_note = f"Imported from t task #{task.id}"
-            if task.context:
-                source_note += f" (context: {task.context})"
+            source_note = f"Imported from grove bud #{bud.id}"
+            if bud.context:
+                source_note += f" (context: {bud.context})"
             cmd.extend(["--notes", source_note])
 
             if dry_run:
-                console.print(f"  [dim]Would create:[/dim] {task.title}")
+                console.print(f"  [dim]Would create:[/dim] {bud.title}")
                 console.print(f"    [dim]cmd: {' '.join(cmd)}[/dim]")
             else:
                 try:
@@ -602,37 +777,36 @@ def push(project_id: int, task_ids: tuple, dry_run: bool):
                         cmd,
                         capture_output=True,
                         text=True,
-                        cwd=os.path.dirname(beads_path)  # Run from parent of .beads
+                        cwd=os.path.dirname(beads_path)
                     )
                     if result.returncode == 0:
-                        # Extract the created issue ID from output
                         output = result.stdout.strip()
-                        console.print(f"  [green]Created:[/green] {task.title}")
+                        console.print(f"  [green]Created:[/green] {bud.title}")
                         if output:
                             console.print(f"    [dim]{output}[/dim]")
                         pushed += 1
                     else:
-                        console.print(f"  [red]Failed:[/red] {task.title}")
+                        console.print(f"  [red]Failed:[/red] {bud.title}")
                         if result.stderr:
                             console.print(f"    [dim]{result.stderr}[/dim]")
                 except Exception as e:
-                    console.print(f"  [red]Error:[/red] {task.title} - {e}")
+                    console.print(f"  [red]Error:[/red] {bud.title} - {e}")
 
         console.print()
         if dry_run:
-            console.print(f"[dim]Dry run complete. Would push {len(tasks)} task(s).[/dim]")
+            console.print(f"[dim]Dry run complete. Would push {len(buds)} bud(s).[/dim]")
         else:
-            console.print(f"[green]Pushed {pushed}/{len(tasks)} task(s)[/green]")
+            console.print(f"[green]Pushed {pushed}/{len(buds)} bud(s)[/green]")
 
 
 @beads.command()
-@click.argument("project_id", type=int)
-@click.option("--dry-run", is_flag=True, help="Show what would be imported without creating tasks")
+@click.argument("branch_id", type=int)
+@click.option("--dry-run", is_flag=True, help="Show what would be imported without creating buds")
 @click.option("--all", "import_all", is_flag=True, help="Import all beads, not just open ones")
-def pull(project_id: int, dry_run: bool, import_all: bool):
-    """Pull beads from linked repository as tasks.
+def pull(branch_id: int, dry_run: bool, import_all: bool):
+    """Pull beads from linked repository as buds.
 
-    Imports open beads from the project's linked beads repo as tasks.
+    Imports open beads from the branch's linked beads repo as buds.
     Skips beads that have already been imported (matched by beads_id).
 
     Example: gv beads pull 1
@@ -640,27 +814,27 @@ def pull(project_id: int, dry_run: bool, import_all: bool):
     """
     from datetime import datetime
     from grove.db import get_session
-    from grove.models import Project, Task
+    from grove.models import Branch, Bud
     from grove.beads import (
         resolve_beads_path,
         read_beads_jsonl,
         filter_open_beads,
-        map_bead_status_to_task_status,
+        map_bead_status_to_bud_status,
         map_bead_priority_to_importance,
     )
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
             return
 
-        if not proj.beads_repo:
-            console.print(f"[red]Project not linked to beads.[/red] Use 'gv project link' first.")
+        if not br.beads_repo:
+            console.print("[red]Branch not linked to beads.[/red] Use 'gv branch link' first.")
             return
 
         try:
-            beads_dir = resolve_beads_path(proj.beads_repo)
+            beads_dir = resolve_beads_path(br.beads_repo)
             all_beads = read_beads_jsonl(beads_dir)
         except FileNotFoundError as e:
             console.print(f"[red]Error:[/red] {e}")
@@ -675,9 +849,9 @@ def pull(project_id: int, dry_run: bool, import_all: bool):
 
         # Get existing beads_ids to avoid duplicates
         existing_bead_ids = set(
-            t.beads_id for t in session.query(Task.beads_id).filter(
-                Task.project_id == project_id,
-                Task.beads_id.isnot(None)
+            b.beads_id for b in session.query(Bud.beads_id).filter(
+                Bud.branch_id == branch_id,
+                Bud.beads_id.isnot(None)
             ).all()
         )
 
@@ -695,16 +869,16 @@ def pull(project_id: int, dry_run: bool, import_all: bool):
             if dry_run:
                 console.print(f"  [dim]Would import:[/dim] {bead.id}: {bead.title}")
             else:
-                task = Task(
+                new_bud = Bud(
                     title=bead.title,
                     description=bead.description,
-                    project_id=project_id,
-                    status=map_bead_status_to_task_status(bead.status),
+                    branch_id=branch_id,
+                    status=map_bead_status_to_bud_status(bead.status),
                     priority=map_bead_priority_to_importance(bead.priority),
                     beads_id=bead.id,
                     beads_synced_at=datetime.utcnow(),
                 )
-                session.add(task)
+                session.add(new_bud)
                 console.print(f"  [green]Imported:[/green] {bead.id}: {bead.title}")
                 imported += 1
 
@@ -713,45 +887,44 @@ def pull(project_id: int, dry_run: bool, import_all: bool):
             new_count = len(beads_to_import) - len(existing_bead_ids)
             console.print(f"[dim]Dry run complete. Would import {new_count} new bead(s), skip {skipped}.[/dim]")
         else:
-            console.print(f"[green]Imported {imported} task(s), skipped {skipped} existing[/green]")
+            console.print(f"[green]Imported {imported} bud(s), skipped {skipped} existing[/green]")
 
 
 @beads.command()
-@click.argument("project_id", type=int)
+@click.argument("branch_id", type=int)
 @click.option("--dry-run", is_flag=True, help="Show what would be synced without making changes")
-def sync(project_id: int, dry_run: bool):
-    """Bidirectional sync between tasks and beads.
+def sync(branch_id: int, dry_run: bool):
+    """Bidirectional sync between buds and beads.
 
-    1. Pulls new beads as tasks (like 'gv beads pull')
-    2. Updates task statuses from changed beads
-    3. Pushes new tasks to beads (like 'gv beads push')
+    1. Pulls new beads as buds (like 'gv beads pull')
+    2. Updates bud statuses from changed beads
+    3. Reports buds not in beads (candidates for push)
 
     Example: gv beads sync 1
     """
     from datetime import datetime
     from grove.db import get_session
-    from grove.models import Project, Task
+    from grove.models import Branch, Bud
     from grove.beads import (
         resolve_beads_path,
         read_beads_jsonl,
         filter_open_beads,
-        map_bead_status_to_task_status,
+        map_bead_status_to_bud_status,
         map_bead_priority_to_importance,
-        get_bead_by_id,
     )
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
             return
 
-        if not proj.beads_repo:
-            console.print(f"[red]Project not linked to beads.[/red] Use 'gv project link' first.")
+        if not br.beads_repo:
+            console.print("[red]Branch not linked to beads.[/red] Use 'gv branch link' first.")
             return
 
         try:
-            beads_dir = resolve_beads_path(proj.beads_repo)
+            beads_dir = resolve_beads_path(br.beads_repo)
             all_beads = read_beads_jsonl(beads_dir)
         except FileNotFoundError as e:
             console.print(f"[red]Error:[/red] {e}")
@@ -760,16 +933,16 @@ def sync(project_id: int, dry_run: bool):
         beads_by_id = {b.id: b for b in all_beads}
         open_beads = filter_open_beads(all_beads)
 
-        console.print(f"[cyan]Syncing project {project_id} with:[/cyan] {beads_dir}")
+        console.print(f"[cyan]Syncing branch {branch_id} with:[/cyan] {beads_dir}")
         console.print()
 
         # Phase 1: Pull new beads
         console.print("[bold]Phase 1: Pull new beads[/bold]")
-        existing_tasks = session.query(Task).filter(
-            Task.project_id == project_id,
-            Task.beads_id.isnot(None)
+        existing_buds = session.query(Bud).filter(
+            Bud.branch_id == branch_id,
+            Bud.beads_id.isnot(None)
         ).all()
-        existing_bead_ids = {t.beads_id for t in existing_tasks}
+        existing_bead_ids = {b.beads_id for b in existing_buds}
 
         pulled = 0
         for bead in open_beads:
@@ -777,16 +950,16 @@ def sync(project_id: int, dry_run: bool):
                 if dry_run:
                     console.print(f"  [dim]Would import:[/dim] {bead.id}: {bead.title}")
                 else:
-                    task = Task(
+                    new_bud = Bud(
                         title=bead.title,
                         description=bead.description,
-                        project_id=project_id,
-                        status=map_bead_status_to_task_status(bead.status),
+                        branch_id=branch_id,
+                        status=map_bead_status_to_bud_status(bead.status),
                         priority=map_bead_priority_to_importance(bead.priority),
                         beads_id=bead.id,
                         beads_synced_at=datetime.utcnow(),
                     )
-                    session.add(task)
+                    session.add(new_bud)
                     console.print(f"  [green]Imported:[/green] {bead.id}")
                 pulled += 1
 
@@ -794,77 +967,77 @@ def sync(project_id: int, dry_run: bool):
             console.print("  [dim]No new beads to pull[/dim]")
         console.print()
 
-        # Phase 2: Update existing tasks from beads
-        console.print("[bold]Phase 2: Update tasks from beads[/bold]")
+        # Phase 2: Update existing buds from beads
+        console.print("[bold]Phase 2: Update buds from beads[/bold]")
         updated = 0
-        for task in existing_tasks:
-            if task.beads_id in beads_by_id:
-                bead = beads_by_id[task.beads_id]
-                new_status = map_bead_status_to_task_status(bead.status)
-                if task.status != new_status:
+        for bud in existing_buds:
+            if bud.beads_id in beads_by_id:
+                bead = beads_by_id[bud.beads_id]
+                new_status = map_bead_status_to_bud_status(bead.status)
+                if bud.status != new_status:
                     if dry_run:
-                        console.print(f"  [dim]Would update:[/dim] {task.id}: {task.status} → {new_status}")
+                        console.print(f"  [dim]Would update:[/dim] {bud.id}: {bud.status} → {new_status}")
                     else:
-                        task.status = new_status
-                        task.beads_synced_at = datetime.utcnow()
-                        console.print(f"  [yellow]Updated:[/yellow] {task.id}: {task.status} → {new_status}")
+                        bud.status = new_status
+                        bud.beads_synced_at = datetime.utcnow()
+                        console.print(f"  [yellow]Updated:[/yellow] {bud.id}: {bud.status} → {new_status}")
                     updated += 1
 
         if updated == 0:
             console.print("  [dim]No status updates needed[/dim]")
         console.print()
 
-        # Phase 3: Report tasks without beads (candidates for push)
-        console.print("[bold]Phase 3: Tasks without beads (push candidates)[/bold]")
-        unlinked_tasks = session.query(Task).filter(
-            Task.project_id == project_id,
-            Task.beads_id.is_(None),
-            Task.status.in_(["inbox", "active"])
+        # Phase 3: Report buds without beads (candidates for push)
+        console.print("[bold]Phase 3: Buds without beads (push candidates)[/bold]")
+        unlinked_buds = session.query(Bud).filter(
+            Bud.branch_id == branch_id,
+            Bud.beads_id.is_(None),
+            Bud.status.in_(["seed", "budding"])
         ).all()
 
-        if unlinked_tasks:
-            for task in unlinked_tasks:
-                console.print(f"  [dim]Not in beads:[/dim] {task.id}: {task.title}")
-            console.print(f"\n  [dim]Run 'gv beads push {project_id}' to export these[/dim]")
+        if unlinked_buds:
+            for bud in unlinked_buds:
+                console.print(f"  [dim]Not in beads:[/dim] {bud.id}: {bud.title}")
+            console.print(f"\n  [dim]Run 'gv beads push {branch_id}' to export these[/dim]")
         else:
-            console.print("  [dim]All tasks are linked to beads[/dim]")
+            console.print("  [dim]All buds are linked to beads[/dim]")
 
         console.print()
-        console.print(f"[bold]Summary:[/bold] Pulled {pulled}, updated {updated}, {len(unlinked_tasks)} unlinked")
+        console.print(f"[bold]Summary:[/bold] Pulled {pulled}, updated {updated}, {len(unlinked_buds)} unlinked")
 
 
 @beads.command()
-@click.argument("project_id", type=int)
-def status(project_id: int):
-    """Show beads sync status for a project.
+@click.argument("branch_id", type=int)
+def status(branch_id: int):
+    """Show beads sync status for a branch.
 
-    Displays sync health: linked tasks, unlinked tasks, stale syncs.
+    Displays sync health: linked buds, unlinked buds, stale syncs.
 
     Example: gv beads status 1
     """
     from datetime import datetime, timedelta
     from grove.db import get_session
-    from grove.models import Project, Task
+    from grove.models import Branch, Bud
     from grove.beads import resolve_beads_path, read_beads_jsonl, filter_open_beads
 
     with get_session() as session:
-        proj = session.query(Project).filter(Project.id == project_id).first()
-        if not proj:
-            console.print(f"[red]Project not found:[/red] {project_id}")
+        br = session.query(Branch).filter(Branch.id == branch_id).first()
+        if not br:
+            console.print(f"[red]Branch not found:[/red] {branch_id}")
             return
 
-        console.print(f"[bold]{proj.title}[/bold]")
+        console.print(f"[bold]{br.title}[/bold]")
         console.print()
 
-        if not proj.beads_repo:
+        if not br.beads_repo:
             console.print("[yellow]Not linked to beads[/yellow]")
-            console.print(f"[dim]Run 'gv project link {project_id} /path/to/.beads' to link[/dim]")
+            console.print(f"[dim]Run 'gv branch link {branch_id} /path/to/.beads' to link[/dim]")
             return
 
-        console.print(f"[cyan]Beads repo:[/cyan] {proj.beads_repo}")
+        console.print(f"[cyan]Beads repo:[/cyan] {br.beads_repo}")
 
         try:
-            beads_dir = resolve_beads_path(proj.beads_repo)
+            beads_dir = resolve_beads_path(br.beads_repo)
             all_beads = read_beads_jsonl(beads_dir)
             open_beads = filter_open_beads(all_beads)
             beads_by_id = {b.id: b for b in all_beads}
@@ -875,40 +1048,40 @@ def status(project_id: int):
         console.print(f"[cyan]Beads:[/cyan] {len(open_beads)} open / {len(all_beads)} total")
         console.print()
 
-        # Get task stats
-        all_tasks = session.query(Task).filter(Task.project_id == project_id).all()
-        linked_tasks = [t for t in all_tasks if t.beads_id]
-        unlinked_tasks = [t for t in all_tasks if not t.beads_id and t.status in ("inbox", "active")]
+        # Get bud stats
+        all_buds = session.query(Bud).filter(Bud.branch_id == branch_id).all()
+        linked_buds = [b for b in all_buds if b.beads_id]
+        unlinked_buds = [b for b in all_buds if not b.beads_id and b.status in ("seed", "budding")]
 
         # Check for stale syncs (>24h old)
         stale_threshold = datetime.utcnow() - timedelta(hours=24)
-        stale_tasks = [t for t in linked_tasks if t.beads_synced_at and t.beads_synced_at < stale_threshold]
+        stale_buds = [b for b in linked_buds if b.beads_synced_at and b.beads_synced_at < stale_threshold]
 
-        # Check for orphaned links (task points to bead that no longer exists)
-        orphaned_tasks = [t for t in linked_tasks if t.beads_id not in beads_by_id]
+        # Check for orphaned links (bud points to bead that no longer exists)
+        orphaned_buds = [b for b in linked_buds if b.beads_id not in beads_by_id]
 
         # Check for unimported beads
-        imported_bead_ids = {t.beads_id for t in linked_tasks}
+        imported_bead_ids = {b.beads_id for b in linked_buds}
         unimported_beads = [b for b in open_beads if b.id not in imported_bead_ids]
 
-        console.print("[bold]Tasks[/bold]")
-        console.print(f"  Total: {len(all_tasks)}")
-        console.print(f"  Linked to beads: {len(linked_tasks)}")
-        console.print(f"  Unlinked (active): {len(unlinked_tasks)}")
+        console.print("[bold]Buds[/bold]")
+        console.print(f"  Total: {len(all_buds)}")
+        console.print(f"  Linked to beads: {len(linked_buds)}")
+        console.print(f"  Unlinked (active): {len(unlinked_buds)}")
         console.print()
 
         console.print("[bold]Sync Health[/bold]")
-        if stale_tasks:
-            console.print(f"  [yellow]Stale syncs (>24h):[/yellow] {len(stale_tasks)}")
+        if stale_buds:
+            console.print(f"  [yellow]Stale syncs (>24h):[/yellow] {len(stale_buds)}")
         else:
-            console.print(f"  [green]All syncs fresh[/green]")
+            console.print("  [green]All syncs fresh[/green]")
 
-        if orphaned_tasks:
-            console.print(f"  [red]Orphaned links:[/red] {len(orphaned_tasks)}")
-            for t in orphaned_tasks[:3]:
-                console.print(f"    {t.id}: {t.beads_id} (bead not found)")
+        if orphaned_buds:
+            console.print(f"  [red]Orphaned links:[/red] {len(orphaned_buds)}")
+            for b in orphaned_buds[:3]:
+                console.print(f"    {b.id}: {b.beads_id} (bead not found)")
         else:
-            console.print(f"  [green]No orphaned links[/green]")
+            console.print("  [green]No orphaned links[/green]")
 
         if unimported_beads:
             console.print(f"  [yellow]Unimported beads:[/yellow] {len(unimported_beads)}")
@@ -917,137 +1090,146 @@ def status(project_id: int):
             if len(unimported_beads) > 3:
                 console.print(f"    ... and {len(unimported_beads) - 3} more")
         else:
-            console.print(f"  [green]All open beads imported[/green]")
+            console.print("  [green]All open beads imported[/green]")
 
         console.print()
-        if unlinked_tasks or unimported_beads:
-            console.print("[dim]Run 'gv beads sync {project_id}' to synchronize[/dim]")
+        if unlinked_buds or unimported_beads:
+            console.print(f"[dim]Run 'gv beads sync {branch_id}' to synchronize[/dim]")
+
+
+# =============================================================================
+# OVERVIEW
+# =============================================================================
 
 
 @main.command()
 def overview():
     """Show full hierarchy tree with counts and progress.
 
-    Displays all areas, initiatives, projects, and task counts.
+    Displays all groves, trunks, branches, and bud counts.
 
     Example: gv overview
     """
-    from sqlalchemy import func
     from grove.db import get_session
-    from grove.models import Area, Initiative, Project, Task
+    from grove.models import Grove, Trunk, Branch, Bud
 
     with get_session() as session:
-        # Get all areas
-        areas = session.query(Area).order_by(Area.name).all()
+        # Get all groves
+        groves = session.query(Grove).order_by(Grove.name).all()
 
-        # Get orphan initiatives (no area)
-        orphan_initiatives = session.query(Initiative).filter(
-            Initiative.area_id.is_(None)
-        ).order_by(Initiative.title).all()
+        # Get orphan trunks (no grove)
+        orphan_trunks = session.query(Trunk).filter(
+            Trunk.grove_id.is_(None)
+        ).order_by(Trunk.title).all()
 
-        # Get orphan projects (no initiative)
-        orphan_projects = session.query(Project).filter(
-            Project.initiative_id.is_(None)
-        ).order_by(Project.title).all()
+        # Get orphan branches (no trunk)
+        orphan_branches = session.query(Branch).filter(
+            Branch.trunk_id.is_(None)
+        ).order_by(Branch.title).all()
 
-        # Get orphan tasks (no project)
-        orphan_tasks = session.query(Task).filter(
-            Task.project_id.is_(None),
-            Task.status != "done"
+        # Get orphan buds (no branch)
+        orphan_buds = session.query(Bud).filter(
+            Bud.branch_id.is_(None),
+            Bud.status != "bloomed"
         ).all()
 
         console.print()
-        console.print("[bold]Todo System Overview[/bold]")
+        console.print("[bold]Grove Overview[/bold]")
         console.print("=" * 40)
 
-        for area in areas:
-            icon = area.icon or "📁"
-            initiatives = session.query(Initiative).filter(Initiative.area_id == area.id).all()
+        for grove in groves:
+            icon = grove.icon or "🌳"
+            trunks = session.query(Trunk).filter(Trunk.grove_id == grove.id).all()
 
-            # Count all tasks under this area
-            area_task_count = 0
-            area_done_count = 0
+            # Count all buds under this grove
+            grove_bud_count = 0
+            grove_bloomed_count = 0
 
-            for init in initiatives:
-                projects = session.query(Project).filter(Project.initiative_id == init.id).all()
-                for proj in projects:
-                    tasks = session.query(Task).filter(Task.project_id == proj.id).all()
-                    area_task_count += len(tasks)
-                    area_done_count += len([t for t in tasks if t.status == "done"])
+            for trunk in trunks:
+                branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
+                for br in branches:
+                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                    grove_bud_count += len(buds)
+                    grove_bloomed_count += len([b for b in buds if b.status == "bloomed"])
 
-            progress = f"{area_done_count}/{area_task_count}" if area_task_count > 0 else "0/0"
+            progress = f"{grove_bloomed_count}/{grove_bud_count}" if grove_bud_count > 0 else "0/0"
             console.print()
-            console.print(f"[bold green]{icon} {area.name}[/bold green] [{progress}]")
+            console.print(f"[bold green]{icon} {grove.name}[/bold green] [{progress}]")
 
-            for init in initiatives:
-                projects = session.query(Project).filter(Project.initiative_id == init.id).all()
+            for trunk in trunks:
+                branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
 
-                # Count tasks for this initiative
-                init_task_count = 0
-                init_done_count = 0
-                for proj in projects:
-                    tasks = session.query(Task).filter(Task.project_id == proj.id).all()
-                    init_task_count += len(tasks)
-                    init_done_count += len([t for t in tasks if t.status == "done"])
+                # Count buds for this trunk
+                trunk_bud_count = 0
+                trunk_bloomed_count = 0
+                for br in branches:
+                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                    trunk_bud_count += len(buds)
+                    trunk_bloomed_count += len([b for b in buds if b.status == "bloomed"])
 
-                progress = f"{init_done_count}/{init_task_count}" if init_task_count > 0 else "0/0"
-                status_icon = "○" if init.status == "active" else "●"
-                console.print(f"  {status_icon} [magenta]{init.title}[/magenta] [{progress}]")
+                progress = f"{trunk_bloomed_count}/{trunk_bud_count}" if trunk_bud_count > 0 else "0/0"
+                status_icon = "○" if trunk.status == "active" else "●"
+                console.print(f"  {status_icon} [magenta]{trunk.title}[/magenta] [{progress}]")
 
-                for proj in projects:
-                    tasks = session.query(Task).filter(Task.project_id == proj.id).all()
-                    done_count = len([t for t in tasks if t.status == "done"])
-                    total_count = len(tasks)
-                    progress = f"{done_count}/{total_count}" if total_count > 0 else "0/0"
-                    status_icon = "○" if proj.status == "active" else "●"
-                    console.print(f"    {status_icon} [yellow]{proj.title}[/yellow] [{progress}]")
+                for br in branches:
+                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                    bloomed_count = len([b for b in buds if b.status == "bloomed"])
+                    total_count = len(buds)
+                    progress = f"{bloomed_count}/{total_count}" if total_count > 0 else "0/0"
+                    status_icon = "○" if br.status == "active" else "●"
+                    console.print(f"    {status_icon} [yellow]{br.title}[/yellow] [{progress}]")
 
         # Show orphans
-        if orphan_initiatives:
+        if orphan_trunks:
             console.print()
-            console.print("[bold dim]Unassigned Initiatives[/bold dim]")
-            for init in orphan_initiatives:
-                projects = session.query(Project).filter(Project.initiative_id == init.id).all()
-                init_task_count = 0
-                init_done_count = 0
-                for proj in projects:
-                    tasks = session.query(Task).filter(Task.project_id == proj.id).all()
-                    init_task_count += len(tasks)
-                    init_done_count += len([t for t in tasks if t.status == "done"])
-                progress = f"{init_done_count}/{init_task_count}" if init_task_count > 0 else "0/0"
-                console.print(f"  ○ [magenta]{init.title}[/magenta] [{progress}]")
+            console.print("[bold dim]Unrooted Trunks[/bold dim]")
+            for trunk in orphan_trunks:
+                branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
+                trunk_bud_count = 0
+                trunk_bloomed_count = 0
+                for br in branches:
+                    buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                    trunk_bud_count += len(buds)
+                    trunk_bloomed_count += len([b for b in buds if b.status == "bloomed"])
+                progress = f"{trunk_bloomed_count}/{trunk_bud_count}" if trunk_bud_count > 0 else "0/0"
+                console.print(f"  ○ [magenta]{trunk.title}[/magenta] [{progress}]")
 
-        if orphan_projects:
+        if orphan_branches:
             console.print()
-            console.print("[bold dim]Unassigned Projects[/bold dim]")
-            for proj in orphan_projects:
-                tasks = session.query(Task).filter(Task.project_id == proj.id).all()
-                done_count = len([t for t in tasks if t.status == "done"])
-                total_count = len(tasks)
-                progress = f"{done_count}/{total_count}" if total_count > 0 else "0/0"
-                console.print(f"  ○ [yellow]{proj.title}[/yellow] [{progress}]")
+            console.print("[bold dim]Floating Branches[/bold dim]")
+            for br in orphan_branches:
+                buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                bloomed_count = len([b for b in buds if b.status == "bloomed"])
+                total_count = len(buds)
+                progress = f"{bloomed_count}/{total_count}" if total_count > 0 else "0/0"
+                console.print(f"  ○ [yellow]{br.title}[/yellow] [{progress}]")
 
-        if orphan_tasks:
+        if orphan_buds:
             console.print()
-            console.print(f"[bold dim]Unassigned Tasks[/bold dim] [{len(orphan_tasks)} items]")
-            for task in orphan_tasks[:5]:  # Show first 5
-                console.print(f"  • [dim]{task.title}[/dim]")
-            if len(orphan_tasks) > 5:
-                console.print(f"  [dim]... and {len(orphan_tasks) - 5} more[/dim]")
+            console.print(f"[bold dim]Loose Buds[/bold dim] [{len(orphan_buds)} items]")
+            for bud in orphan_buds[:5]:
+                console.print(f"  • [dim]{bud.title}[/dim]")
+            if len(orphan_buds) > 5:
+                console.print(f"  [dim]... and {len(orphan_buds) - 5} more[/dim]")
 
         # Summary stats
-        total_tasks = session.query(Task).count()
-        done_tasks = session.query(Task).filter(Task.status == "done").count()
-        active_tasks = session.query(Task).filter(Task.status == "active").count()
-        inbox_tasks = session.query(Task).filter(Task.status == "inbox").count()
+        total_buds = session.query(Bud).count()
+        bloomed_buds = session.query(Bud).filter(Bud.status == "bloomed").count()
+        budding_buds = session.query(Bud).filter(Bud.status == "budding").count()
+        seed_buds = session.query(Bud).filter(Bud.status == "seed").count()
 
         console.print()
         console.print("=" * 40)
-        console.print(f"[bold]Total:[/bold] {total_tasks} tasks | "
-                      f"[green]{done_tasks} done[/green] | "
-                      f"[cyan]{active_tasks} active[/cyan] | "
-                      f"[yellow]{inbox_tasks} inbox[/yellow]")
+        console.print(f"[bold]Total:[/bold] {total_buds} buds | "
+                      f"[green]{bloomed_buds} bloomed[/green] | "
+                      f"[cyan]{budding_buds} budding[/cyan] | "
+                      f"[yellow]{seed_buds} seeds[/yellow]")
         console.print()
+
+
+# =============================================================================
+# REVIEW
+# =============================================================================
 
 
 @main.command()
@@ -1055,118 +1237,123 @@ def review():
     """Guided weekly review flow.
 
     Walks through a structured review:
-    1. Process inbox items
-    2. Review stale tasks
+    1. Process seeds (inbox)
+    2. Review stale buds
     3. Check blocked work
-    4. Review project progress
-    5. Celebrate completions
+    4. Review branch progress
+    5. Celebrate blooms
 
     Example: gv review
     """
     from datetime import datetime, timedelta
     from grove.db import get_session
-    from grove.models import Task, Project, Area
+    from grove.models import Bud, Branch, Grove
 
     with get_session() as session:
         console.print()
         console.print("[bold magenta]═══ Weekly Review ═══[/bold magenta]")
         console.print()
 
-        # Step 1: Inbox
-        inbox_tasks = session.query(Task).filter(Task.status == "inbox").all()
-        console.print("[bold]1. Inbox[/bold]")
-        if inbox_tasks:
-            console.print(f"   [yellow]{len(inbox_tasks)} item(s) need clarification:[/yellow]")
-            for task in inbox_tasks[:5]:
-                console.print(f"   • {task.id}: {task.title}")
-            if len(inbox_tasks) > 5:
-                console.print(f"   ... and {len(inbox_tasks) - 5} more")
+        # Step 1: Seeds
+        seed_buds = session.query(Bud).filter(Bud.status == "seed").all()
+        console.print("[bold]1. Seeds (Inbox)[/bold]")
+        if seed_buds:
+            console.print(f"   [yellow]{len(seed_buds)} seed(s) need planting:[/yellow]")
+            for bud in seed_buds[:5]:
+                console.print(f"   • {bud.id}: {bud.title}")
+            if len(seed_buds) > 5:
+                console.print(f"   ... and {len(seed_buds) - 5} more")
             console.print()
-            console.print("   [dim]Run 'gv inbox' to process these[/dim]")
+            console.print("   [dim]Run 'gv seeds' to process these[/dim]")
         else:
-            console.print("   [green]✓ Inbox is empty[/green]")
+            console.print("   [green]✓ No seeds waiting[/green]")
         console.print()
 
-        # Step 2: Stale tasks (not updated in 7+ days)
+        # Step 2: Stale buds (not updated in 7+ days)
         stale_threshold = datetime.utcnow() - timedelta(days=7)
-        stale_tasks = session.query(Task).filter(
-            Task.status == "active",
-            Task.updated_at < stale_threshold
+        stale_buds = session.query(Bud).filter(
+            Bud.status == "budding",
+            Bud.updated_at < stale_threshold
         ).all()
 
-        console.print("[bold]2. Stale Tasks[/bold]")
-        if stale_tasks:
-            console.print(f"   [yellow]{len(stale_tasks)} task(s) haven't been touched in 7+ days:[/yellow]")
-            for task in stale_tasks[:5]:
-                days_old = (datetime.utcnow() - task.updated_at).days
-                console.print(f"   • {task.id}: {task.title} ({days_old}d)")
-            if len(stale_tasks) > 5:
-                console.print(f"   ... and {len(stale_tasks) - 5} more")
+        console.print("[bold]2. Stale Buds[/bold]")
+        if stale_buds:
+            console.print(f"   [yellow]{len(stale_buds)} bud(s) haven't grown in 7+ days:[/yellow]")
+            for bud in stale_buds[:5]:
+                days_old = (datetime.utcnow() - bud.updated_at).days
+                console.print(f"   • {bud.id}: {bud.title} ({days_old}d)")
+            if len(stale_buds) > 5:
+                console.print(f"   ... and {len(stale_buds) - 5} more")
             console.print()
-            console.print("   [dim]Consider: still relevant? blocked? needs breakdown?[/dim]")
+            console.print("   [dim]Consider: still growing? blocked? needs breakdown?[/dim]")
         else:
-            console.print("   [green]✓ No stale tasks[/green]")
+            console.print("   [green]✓ No stale buds[/green]")
         console.print()
 
-        # Step 3: Blocked tasks
-        from grove.models import TaskDependency
-        blocked_count = session.query(Task).join(
-            TaskDependency, Task.id == TaskDependency.task_id
+        # Step 3: Blocked buds
+        from grove.models import BudDependency
+        blocked_count = session.query(Bud).join(
+            BudDependency, Bud.id == BudDependency.bud_id
         ).filter(
-            Task.status == "active",
-            TaskDependency.dependency_type == "blocks"
+            Bud.status == "budding",
+            BudDependency.dependency_type == "blocks"
         ).distinct().count()
 
-        console.print("[bold]3. Blocked Work[/bold]")
+        console.print("[bold]3. Blocked Buds[/bold]")
         if blocked_count:
-            console.print(f"   [yellow]{blocked_count} task(s) are blocked[/yellow]")
+            console.print(f"   [yellow]{blocked_count} bud(s) are blocked[/yellow]")
             console.print("   [dim]Run 'gv blocked' to see details[/dim]")
         else:
-            console.print("   [green]✓ No blocked tasks[/green]")
+            console.print("   [green]✓ No blocked buds[/green]")
         console.print()
 
-        # Step 4: Project progress
-        console.print("[bold]4. Project Progress[/bold]")
-        projects = session.query(Project).filter(Project.status == "active").all()
-        if projects:
-            for proj in projects[:5]:
-                tasks = session.query(Task).filter(Task.project_id == proj.id).all()
-                total = len(tasks)
-                done = len([t for t in tasks if t.status == "done"])
-                active = len([t for t in tasks if t.status == "active"])
+        # Step 4: Branch progress
+        console.print("[bold]4. Branch Progress[/bold]")
+        branches = session.query(Branch).filter(Branch.status == "active").all()
+        if branches:
+            for br in branches[:5]:
+                buds = session.query(Bud).filter(Bud.branch_id == br.id).all()
+                total = len(buds)
+                bloomed = len([b for b in buds if b.status == "bloomed"])
+                budding = len([b for b in buds if b.status == "budding"])
                 if total > 0:
-                    pct = int(done / total * 100)
+                    pct = int(bloomed / total * 100)
                     bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-                    console.print(f"   {bar} {pct}% {proj.title}")
-                    console.print(f"   [dim]{done} done, {active} active, {total - done - active} other[/dim]")
+                    console.print(f"   {bar} {pct}% {br.title}")
+                    console.print(f"   [dim]{bloomed} bloomed, {budding} budding, {total - bloomed - budding} other[/dim]")
                 else:
-                    console.print(f"   [dim]{proj.title} (no tasks)[/dim]")
-            if len(projects) > 5:
-                console.print(f"   ... and {len(projects) - 5} more projects")
+                    console.print(f"   [dim]{br.title} (no buds)[/dim]")
+            if len(branches) > 5:
+                console.print(f"   ... and {len(branches) - 5} more branches")
         else:
-            console.print("   [dim]No active projects[/dim]")
+            console.print("   [dim]No active branches[/dim]")
         console.print()
 
-        # Step 5: Recent completions
+        # Step 5: Recent blooms
         week_ago = datetime.utcnow() - timedelta(days=7)
-        completed = session.query(Task).filter(
-            Task.status == "done",
-            Task.completed_at >= week_ago
+        bloomed = session.query(Bud).filter(
+            Bud.status == "bloomed",
+            Bud.completed_at >= week_ago
         ).all()
 
-        console.print("[bold]5. This Week's Wins[/bold]")
-        if completed:
-            console.print(f"   [green]🎉 {len(completed)} task(s) completed![/green]")
-            for task in completed[:5]:
-                console.print(f"   ✓ {task.title}")
-            if len(completed) > 5:
-                console.print(f"   ... and {len(completed) - 5} more")
+        console.print("[bold]5. This Week's Blooms[/bold]")
+        if bloomed:
+            console.print(f"   [green]🌸 {len(bloomed)} bud(s) bloomed![/green]")
+            for bud in bloomed[:5]:
+                console.print(f"   ✓ {bud.title}")
+            if len(bloomed) > 5:
+                console.print(f"   ... and {len(bloomed) - 5} more")
         else:
-            console.print("   [dim]No completions this week[/dim]")
+            console.print("   [dim]No blooms this week[/dim]")
         console.print()
 
         console.print("[bold magenta]═══ Review Complete ═══[/bold magenta]")
         console.print()
+
+
+# =============================================================================
+# HABIT MANAGEMENT
+# =============================================================================
 
 
 @main.group()
@@ -1178,24 +1365,24 @@ def habit():
 @habit.command(name="new")
 @click.argument("name")
 @click.option("--frequency", "-f", default="daily", type=click.Choice(["daily", "weekly", "3x_week"]))
-@click.option("--area", "-a", "area_id", type=int, help="Link to an area")
-def habit_new(name: str, frequency: str, area_id: int | None):
+@click.option("--grove", "-g", "grove_id", type=int, help="Link to a grove")
+def habit_new(name: str, frequency: str, grove_id: int | None):
     """Create a new habit to track.
 
     Example: gv habit new "Morning meditation" -f daily
-    Example: gv habit new "Gym session" -f 3x_week --area 1
+    Example: gv habit new "Gym session" -f 3x_week --grove 1
     """
     from grove.db import get_session
-    from grove.models import Habit, Area
+    from grove.models import Habit, Grove
 
     with get_session() as session:
-        if area_id:
-            area = session.query(Area).filter(Area.id == area_id).first()
-            if not area:
-                console.print(f"[red]Area not found:[/red] {area_id}")
+        if grove_id:
+            grove = session.query(Grove).filter(Grove.id == grove_id).first()
+            if not grove:
+                console.print(f"[red]Grove not found:[/red] {grove_id}")
                 return
 
-        habit = Habit(title=name, frequency=frequency, area_id=area_id)
+        habit = Habit(title=name, frequency=frequency, grove_id=grove_id)
         session.add(habit)
         session.flush()
         console.print(f"[green]Created habit:[/green] {habit.id}: {name} ({frequency})")
@@ -1226,6 +1413,7 @@ def habit_list(show_all: bool):
         today = datetime.utcnow().date()
         week_ago = datetime.utcnow() - timedelta(days=7)
 
+        console.print("[bold]Habits:[/bold]")
         for habit in habits:
             # Count completions this week
             week_count = session.query(HabitLog).filter(
@@ -1372,6 +1560,535 @@ def habit_resume(habit_id: int):
 
         habit.is_active = True
         console.print(f"[green]Resumed:[/green] {habit.title}")
+
+
+# =============================================================================
+# TRUNK (Initiative) MANAGEMENT
+# =============================================================================
+
+
+@main.group()
+def trunk():
+    """Manage trunks (strategic initiatives)."""
+    pass
+
+
+@trunk.command(name="new")
+@click.argument("title")
+@click.option("--grove", "-g", "grove_id", type=int, help="Link to a grove")
+@click.option("--description", "-d", help="Trunk description")
+@click.option("--target", "-t", help="Target date (YYYY-MM-DD)")
+@click.option("--priority", "-p", type=click.Choice(["high", "medium", "low"]), default="medium", help="Priority level")
+def trunk_new(title: str, grove_id: int | None, description: str | None, target: str | None, priority: str):
+    """Create a new trunk (strategic initiative).
+
+    Example: gv trunk new "Ship personal projects" --grove 1
+    Example: gv trunk new "Learn Rust" -g 2 -d "Deep dive into systems programming" -t 2025-06-01
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Trunk, Grove
+
+    with get_session() as session:
+        # Validate grove if provided
+        if grove_id:
+            grove = session.query(Grove).filter(Grove.id == grove_id).first()
+            if not grove:
+                console.print(f"[red]Grove not found:[/red] {grove_id}")
+                return
+
+        # Parse target date if provided
+        target_date = None
+        if target:
+            try:
+                target_date = datetime.strptime(target, "%Y-%m-%d").date()
+            except ValueError:
+                console.print(f"[red]Invalid date format:[/red] {target} (use YYYY-MM-DD)")
+                return
+
+        trunk = Trunk(
+            title=title,
+            grove_id=grove_id,
+            description=description,
+            target_date=target_date,
+            priority=priority,
+            status="active",
+        )
+        session.add(trunk)
+        session.commit()
+
+        grove_info = f" (grove: {grove.name})" if grove_id else ""
+        console.print(f"[green]Created trunk:[/green] {trunk.id}: {title}{grove_info}")
+
+
+@trunk.command(name="list")
+@click.option("--grove", "-g", "grove_id", type=int, help="Filter by grove ID")
+@click.option("--all", "show_all", is_flag=True, help="Include completed trunks")
+def trunk_list(grove_id: int | None, show_all: bool):
+    """List trunks.
+
+    Example: gv trunk list
+    Example: gv trunk list --grove 1
+    Example: gv trunk list --all
+    """
+    from grove.db import get_session
+    from grove.models import Trunk, Grove
+
+    with get_session() as session:
+        query = session.query(Trunk)
+
+        if grove_id:
+            grove = session.query(Grove).filter(Grove.id == grove_id).first()
+            if not grove:
+                console.print(f"[red]Grove not found:[/red] {grove_id}")
+                return
+            query = query.filter(Trunk.grove_id == grove_id)
+            console.print(f"[cyan]Trunks in {grove.name}:[/cyan]")
+        else:
+            console.print("[cyan]All trunks:[/cyan]")
+
+        if not show_all:
+            query = query.filter(Trunk.status != "completed")
+
+        trunks = query.order_by(Trunk.priority, Trunk.title).all()
+
+        if not trunks:
+            console.print("[dim]No trunks found[/dim]")
+            return
+
+        console.print()
+        for trunk in trunks:
+            status_icon = "●" if trunk.status == "completed" else "○"
+            priority_color = {"high": "red", "medium": "yellow", "low": "dim"}.get(trunk.priority, "white")
+
+            # Get grove name if linked
+            grove_label = ""
+            if trunk.grove_id:
+                grove = session.query(Grove).filter(Grove.id == trunk.grove_id).first()
+                if grove:
+                    icon = grove.icon or "🌳"
+                    grove_label = f" [{icon} {grove.name}]"
+
+            # Target date info
+            target_label = ""
+            if trunk.target_date:
+                target_label = f" (target: {trunk.target_date.strftime('%Y-%m-%d')})"
+
+            console.print(f"  {status_icon} [{priority_color}]{trunk.id}[/{priority_color}]: {trunk.title}[dim]{grove_label}{target_label}[/dim]")
+
+
+@trunk.command(name="show")
+@click.argument("trunk_id", type=int)
+def trunk_show(trunk_id: int):
+    """Show trunk details with branches/buds count.
+
+    Example: gv trunk show 1
+    """
+    from grove.db import get_session
+    from grove.models import Trunk, Grove, Branch, Bud
+
+    with get_session() as session:
+        trunk = session.query(Trunk).filter(Trunk.id == trunk_id).first()
+        if not trunk:
+            console.print(f"[red]Trunk not found:[/red] {trunk_id}")
+            return
+
+        console.print()
+        console.print(f"[bold magenta]Trunk:[/bold magenta] {trunk.title}")
+        console.print(f"  [dim]id: {trunk.id} | status: {trunk.status} | priority: {trunk.priority}[/dim]")
+
+        if trunk.description:
+            console.print(f"  [dim]{trunk.description}[/dim]")
+
+        if trunk.target_date:
+            console.print(f"  [dim]target: {trunk.target_date.strftime('%Y-%m-%d')}[/dim]")
+
+        if trunk.labels:
+            console.print(f"  [dim]labels: {', '.join(trunk.labels)}[/dim]")
+
+        # Show linked grove
+        if trunk.grove_id:
+            grove = session.query(Grove).filter(Grove.id == trunk.grove_id).first()
+            if grove:
+                icon = grove.icon or "🌳"
+                console.print()
+                console.print(f"  [bold green]Grove:[/bold green] {icon} {grove.name}")
+
+        # Count branches under this trunk
+        branch_count = session.query(Branch).filter(Branch.trunk_id == trunk.id).count()
+        branch_done = session.query(Branch).filter(
+            Branch.trunk_id == trunk.id,
+            Branch.status == "completed"
+        ).count()
+
+        # Count buds under this trunk (direct + via branches)
+        direct_bud_count = session.query(Bud).filter(Bud.trunk_id == trunk.id).count()
+        direct_bud_bloomed = session.query(Bud).filter(
+            Bud.trunk_id == trunk.id,
+            Bud.status == "bloomed"
+        ).count()
+
+        # Buds via branches
+        branch_ids = [b.id for b in session.query(Branch.id).filter(Branch.trunk_id == trunk.id).all()]
+        branch_bud_count = session.query(Bud).filter(Bud.branch_id.in_(branch_ids)).count() if branch_ids else 0
+        branch_bud_bloomed = session.query(Bud).filter(
+            Bud.branch_id.in_(branch_ids),
+            Bud.status == "bloomed"
+        ).count() if branch_ids else 0
+
+        total_buds = direct_bud_count + branch_bud_count
+        total_bloomed = direct_bud_bloomed + branch_bud_bloomed
+
+        console.print()
+        console.print(f"  [cyan]Branches:[/cyan] {branch_done}/{branch_count}")
+        console.print(f"  [cyan]Buds:[/cyan] {total_bloomed}/{total_buds} ({direct_bud_count} direct, {branch_bud_count} via branches)")
+
+        # List branches if any
+        if branch_count > 0:
+            console.print()
+            console.print("  [bold]Branches:[/bold]")
+            branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).order_by(Branch.title).all()
+            for br in branches[:10]:
+                status_icon = "●" if br.status == "completed" else "○"
+                console.print(f"    {status_icon} {br.id}: {br.title}")
+            if branch_count > 10:
+                console.print(f"    [dim]... and {branch_count - 10} more[/dim]")
+
+        console.print()
+
+
+@trunk.command(name="done")
+@click.argument("trunk_id", type=int)
+def trunk_done(trunk_id: int):
+    """Mark a trunk as completed.
+
+    Example: gv trunk done 1
+    """
+    from grove.db import get_session
+    from grove.models import Trunk
+
+    with get_session() as session:
+        trunk = session.query(Trunk).filter(Trunk.id == trunk_id).first()
+        if not trunk:
+            console.print(f"[red]Trunk not found:[/red] {trunk_id}")
+            return
+
+        if trunk.status == "completed":
+            console.print(f"[yellow]Trunk already completed:[/yellow] {trunk.title}")
+            return
+
+        trunk.status = "completed"
+        session.commit()
+        console.print(f"[green]Completed:[/green] {trunk.title}")
+
+
+@trunk.command(name="link")
+@click.argument("trunk_id", type=int)
+@click.option("--grove", "-g", "grove_id", type=int, required=True, help="Grove ID to link to")
+def trunk_link(trunk_id: int, grove_id: int):
+    """Link a trunk to a grove.
+
+    Example: gv trunk link 1 --grove 2
+    """
+    from grove.db import get_session
+    from grove.models import Trunk, Grove
+
+    with get_session() as session:
+        trunk = session.query(Trunk).filter(Trunk.id == trunk_id).first()
+        if not trunk:
+            console.print(f"[red]Trunk not found:[/red] {trunk_id}")
+            return
+
+        grove = session.query(Grove).filter(Grove.id == grove_id).first()
+        if not grove:
+            console.print(f"[red]Grove not found:[/red] {grove_id}")
+            return
+
+        old_grove_id = trunk.grove_id
+        trunk.grove_id = grove_id
+        session.commit()
+
+        if old_grove_id:
+            old_grove = session.query(Grove).filter(Grove.id == old_grove_id).first()
+            old_name = old_grove.name if old_grove else f"id:{old_grove_id}"
+            console.print(f"[green]Relinked:[/green] {trunk.title}")
+            console.print(f"  [dim]{old_name} -> {grove.name}[/dim]")
+        else:
+            icon = grove.icon or "🌳"
+            console.print(f"[green]Linked:[/green] {trunk.title} -> {icon} {grove.name}")
+
+
+# =============================================================================
+# GROVE (Area) MANAGEMENT
+# =============================================================================
+
+
+@main.group()
+def grove():
+    """Manage groves (life areas like Health, Coding, etc.)."""
+    pass
+
+
+@grove.command(name="new")
+@click.argument("name")
+@click.option("--icon", "-i", help="Emoji icon for the grove (e.g., '🌳')")
+@click.option("--description", "-d", help="Description of the grove")
+@click.option("--color", "-c", help="Hex color code (e.g., '#FF5733')")
+def grove_new(name: str, icon: str | None, description: str | None, color: str | None):
+    """Create a new grove.
+
+    Example: gv grove new "Health" --icon "🏃" --description "Physical and mental wellness"
+    Example: gv grove new "Coding" -i "💻"
+    """
+    from grove.db import get_session
+    from grove.models import Grove
+
+    with get_session() as session:
+        # Check if grove with same name already exists
+        existing = session.query(Grove).filter(Grove.name == name).first()
+        if existing:
+            console.print(f"[red]Grove already exists:[/red] {name} (id: {existing.id})")
+            return
+
+        # Get next sort order
+        max_order = session.query(Grove.sort_order).order_by(Grove.sort_order.desc()).first()
+        next_order = (max_order[0] + 1) if max_order else 0
+
+        g = Grove(
+            name=name,
+            icon=icon,
+            description=description,
+            color=color,
+            sort_order=next_order,
+        )
+        session.add(g)
+        session.flush()
+
+        icon_display = f"{icon} " if icon else ""
+        console.print(f"[green]Created grove:[/green] {g.id}: {icon_display}{name}")
+
+
+@grove.command(name="list")
+@click.option("--all", "show_all", is_flag=True, help="Include inactive groves")
+def grove_list(show_all: bool):
+    """List all groves.
+
+    Example: gv grove list
+    Example: gv grove list --all
+    """
+    from grove.db import get_session
+    from grove.models import Grove, Trunk, Bud
+
+    with get_session() as session:
+        query = session.query(Grove)
+        if not show_all:
+            query = query.filter(Grove.is_active == True)
+        groves = query.order_by(Grove.sort_order, Grove.name).all()
+
+        if not groves:
+            console.print("[dim]No groves found[/dim]")
+            return
+
+        console.print("[bold]Groves:[/bold]")
+        for g in groves:
+            icon = g.icon or "🌳"
+            status = "" if g.is_active else " [dim](archived)[/dim]"
+
+            # Count trunks
+            trunk_count = session.query(Trunk).filter(Trunk.grove_id == g.id).count()
+
+            # Count buds (direct and via trunks/branches)
+            direct_buds = session.query(Bud).filter(Bud.grove_id == g.id).count()
+
+            console.print(f"  {g.id}: {icon} {g.name}{status} [{trunk_count} trunks, {direct_buds} direct buds]")
+            if g.description:
+                console.print(f"     [dim]{g.description}[/dim]")
+
+
+@grove.command(name="show")
+@click.argument("grove_id", type=int)
+def grove_show(grove_id: int):
+    """Show grove details with trunks and bud counts.
+
+    Example: gv grove show 1
+    """
+    from grove.db import get_session
+    from grove.models import Grove, Trunk, Branch, Bud
+
+    with get_session() as session:
+        g = session.query(Grove).filter(Grove.id == grove_id).first()
+        if not g:
+            console.print(f"[red]Grove not found:[/red] {grove_id}")
+            return
+
+        icon = g.icon or "🌳"
+        status = "[green]active[/green]" if g.is_active else "[yellow]archived[/yellow]"
+
+        console.print()
+        console.print(f"[bold green]{icon} {g.name}[/bold green]")
+        console.print(f"  [dim]id: {g.id} | status: {status}[/dim]")
+        if g.description:
+            console.print(f"  [dim]{g.description}[/dim]")
+        if g.color:
+            console.print(f"  [dim]color: {g.color}[/dim]")
+        console.print()
+
+        # Get trunks in this grove
+        trunks = session.query(Trunk).filter(Trunk.grove_id == g.id).all()
+
+        # Count buds at each level
+        direct_buds = session.query(Bud).filter(Bud.grove_id == g.id).count()
+        direct_bloomed = session.query(Bud).filter(Bud.grove_id == g.id, Bud.status == "bloomed").count()
+
+        # Buds via trunks and branches
+        total_buds = direct_buds
+        total_bloomed = direct_bloomed
+        for trunk in trunks:
+            # Buds directly on trunk
+            trunk_buds = session.query(Bud).filter(Bud.trunk_id == trunk.id).count()
+            trunk_bloomed = session.query(Bud).filter(Bud.trunk_id == trunk.id, Bud.status == "bloomed").count()
+            total_buds += trunk_buds
+            total_bloomed += trunk_bloomed
+
+            # Buds via branches
+            branches = session.query(Branch).filter(Branch.trunk_id == trunk.id).all()
+            for br in branches:
+                br_buds = session.query(Bud).filter(Bud.branch_id == br.id).count()
+                br_bloomed = session.query(Bud).filter(Bud.branch_id == br.id, Bud.status == "bloomed").count()
+                total_buds += br_buds
+                total_bloomed += br_bloomed
+
+        # Direct branches under grove
+        direct_branches = session.query(Branch).filter(Branch.grove_id == g.id).all()
+        for br in direct_branches:
+            br_buds = session.query(Bud).filter(Bud.branch_id == br.id).count()
+            br_bloomed = session.query(Bud).filter(Bud.branch_id == br.id, Bud.status == "bloomed").count()
+            total_buds += br_buds
+            total_bloomed += br_bloomed
+
+        console.print("[bold]Statistics[/bold]")
+        console.print(f"  Trunks: {len(trunks)}")
+        console.print(f"  Direct branches: {len(direct_branches)}")
+        console.print(f"  Total buds: {total_bloomed}/{total_buds} bloomed")
+        console.print()
+
+        if trunks:
+            console.print("[bold]Trunks[/bold]")
+            for trunk in trunks:
+                status_icon = "○" if trunk.status == "active" else "●"
+                console.print(f"  {status_icon} {trunk.id}: {trunk.title}")
+            console.print()
+
+
+@grove.command(name="archive")
+@click.argument("grove_id", type=int)
+def grove_archive(grove_id: int):
+    """Archive a grove (soft delete).
+
+    Archived groves won't show in 'gv grove list' but can be viewed with --all.
+    This does NOT delete trunks, branches, or buds under the grove.
+
+    Example: gv grove archive 1
+    """
+    from grove.db import get_session
+    from grove.models import Grove
+
+    with get_session() as session:
+        g = session.query(Grove).filter(Grove.id == grove_id).first()
+        if not g:
+            console.print(f"[red]Grove not found:[/red] {grove_id}")
+            return
+
+        if not g.is_active:
+            console.print(f"[yellow]Grove already archived:[/yellow] {g.name}")
+            return
+
+        g.is_active = False
+        icon = g.icon or "🌳"
+        console.print(f"[yellow]Archived:[/yellow] {icon} {g.name}")
+        console.print("[dim]Run 'gv grove list --all' to see archived groves[/dim]")
+
+
+# =============================================================================
+# ALIASES for backward compatibility and convenience
+# =============================================================================
+
+
+# Keep 'done' as alias for 'bloom' for muscle memory
+@main.command(name="done")
+@click.argument("bud_id", type=int)
+def done_alias(bud_id: int):
+    """Alias for 'bloom' - mark a bud as complete.
+
+    Example: gv done 1
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Bud
+
+    with get_session() as session:
+        bud = session.query(Bud).filter(Bud.id == bud_id).first()
+        if not bud:
+            console.print(f"[red]Bud not found:[/red] {bud_id}")
+            return
+        bud.status = "bloomed"
+        bud.completed_at = datetime.utcnow()
+        session.commit()
+        console.print(f"[green]🌸 Bloomed:[/green] {bud.title}")
+
+
+# Keep 'inbox' as alias for 'seeds' for muscle memory
+@main.command(name="inbox")
+def inbox_alias():
+    """Alias for 'seeds' - show unprocessed items.
+
+    Example: gv inbox
+    """
+    from grove.db import get_session
+    from grove.models import Bud
+
+    with get_session() as session:
+        buds = session.query(Bud).filter(Bud.status == "seed").all()
+        if not buds:
+            console.print("[dim]No seeds to process[/dim]")
+            return
+        console.print("[bold]Seeds (unprocessed):[/bold]")
+        for bud in buds:
+            console.print(f"  {bud.id}: {bud.title}")
+
+
+# Keep 'now' as alias for 'pulse' for muscle memory
+@main.command(name="now")
+def now_alias():
+    """Alias for 'pulse' - show actionable, unblocked buds.
+
+    Example: gv now
+    """
+    from sqlalchemy import and_, select
+    from grove.db import get_session
+    from grove.models import Bud, BudDependency
+
+    with get_session() as session:
+        blocked_subq = select(BudDependency.bud_id).join(
+            Bud, BudDependency.depends_on_id == Bud.id
+        ).where(
+            and_(
+                BudDependency.dependency_type == "blocks",
+                Bud.status != "bloomed"
+            )
+        ).scalar_subquery()
+
+        buds = session.query(Bud).filter(
+            Bud.status == "budding",
+            ~Bud.id.in_(blocked_subq)
+        ).all()
+
+        if not buds:
+            console.print("[dim]Nothing ready to work on right now[/dim]")
+            return
+        console.print("[bold]Ready to bloom:[/bold]")
+        for bud in buds:
+            console.print(f"  {bud.id}: {bud.title}")
 
 
 if __name__ == "__main__":
