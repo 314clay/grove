@@ -47,6 +47,7 @@ class Grove(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     trunks: Mapped[list["Trunk"]] = relationship(back_populates="grove")
     branches: Mapped[list["Branch"]] = relationship(back_populates="grove")
@@ -69,6 +70,7 @@ class Trunk(Base):
     labels: Mapped[Optional[list]] = mapped_column(ARRAY(Text))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     grove: Mapped[Optional["Grove"]] = relationship(back_populates="trunks")
     parent: Mapped[Optional["Trunk"]] = relationship(remote_side=[id], backref="children")
@@ -112,6 +114,7 @@ class Branch(Base):
     beads_repo: Mapped[Optional[str]] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     trunk: Mapped[Optional["Trunk"]] = relationship(back_populates="branches")
     grove: Mapped[Optional["Grove"]] = relationship(back_populates="branches")
@@ -161,6 +164,7 @@ class Bud(Base):
     clarified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     branch: Mapped[Optional["Branch"]] = relationship(back_populates="buds")
     trunk: Mapped[Optional["Trunk"]] = relationship(back_populates="buds")
@@ -239,3 +243,40 @@ class BeadLink(Base):
 
     bud: Mapped[Optional["Bud"]] = relationship(back_populates="bead_links")
     branch: Mapped[Optional["Branch"]] = relationship(back_populates="bead_links")
+
+
+class ActivityLog(Base):
+    """Append-only activity log for temporal tracking.
+
+    Tracks events like status changes, context checks, manual logs,
+    and ref additions. Used by AI agents to understand what happened
+    and when.
+    """
+    __tablename__ = "activity_log"
+    __table_args__ = {"schema": "todos"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_type: Mapped[str] = mapped_column(String(20), nullable=False)  # grove, trunk, branch, bud
+    item_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)  # created, checked, log, ref_added, status_changed, bead_synced
+    content: Mapped[Optional[str]] = mapped_column(Text)
+    session_id: Mapped[Optional[str]] = mapped_column(UUID)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Ref(Base):
+    """Structured references to external resources.
+
+    Links Grove items to Obsidian notes, files, and URLs.
+    Beads are tracked separately in bead_links table.
+    """
+    __tablename__ = "refs"
+    __table_args__ = {"schema": "todos"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_type: Mapped[str] = mapped_column(String(20), nullable=False)  # grove, trunk, branch, bud
+    item_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ref_type: Mapped[str] = mapped_column(String(20), nullable=False)  # note, file, url
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

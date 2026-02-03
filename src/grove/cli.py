@@ -16,6 +16,81 @@ from rich.console import Console
 console = Console()
 
 
+def parse_item_ref(ref: str) -> tuple[str, int]:
+    """Parse item reference like 'b:45' or 'br:12' into (item_type, item_id).
+
+    Prefixes:
+      g:  -> grove
+      t:  -> trunk
+      br: -> branch
+      b:  -> bud
+
+    Raises click.BadParameter if invalid format.
+    """
+    prefixes = {
+        'g': 'grove',
+        't': 'trunk',
+        'br': 'branch',
+        'b': 'bud',
+    }
+
+    if ':' not in ref:
+        raise click.BadParameter(
+            f"Invalid format '{ref}'. Use prefix:id (e.g., b:45, br:12, t:16, g:1)"
+        )
+
+    parts = ref.split(':', 1)
+    prefix = parts[0].lower()
+
+    if prefix not in prefixes:
+        raise click.BadParameter(
+            f"Unknown prefix '{prefix}'. Use: g (grove), t (trunk), br (branch), b (bud)"
+        )
+
+    try:
+        item_id = int(parts[1])
+    except ValueError:
+        raise click.BadParameter(f"Invalid ID '{parts[1]}'. Must be a number.")
+
+    return prefixes[prefix], item_id
+
+
+def get_item_by_ref(session, item_type: str, item_id: int):
+    """Get an item by type and ID. Returns (item, model_class) or (None, None)."""
+    from grove.models import Grove, Trunk, Branch, Bud
+
+    models = {
+        'grove': Grove,
+        'trunk': Trunk,
+        'branch': Branch,
+        'bud': Bud,
+    }
+
+    model = models.get(item_type)
+    if not model:
+        return None, None
+
+    item = session.query(model).filter(model.id == item_id).first()
+    return item, model
+
+
+def log_activity(session, item_type: str, item_id: int, event_type: str, content: str = None):
+    """Helper to log an activity event."""
+    import os
+    from grove.models import ActivityLog
+
+    session_id = os.environ.get('CLAUDE_SESSION_ID')
+
+    log_entry = ActivityLog(
+        item_type=item_type,
+        item_id=item_id,
+        event_type=event_type,
+        content=content,
+        session_id=session_id,
+    )
+    session.add(log_entry)
+
+
 @click.group()
 @click.version_option()
 def main():
@@ -151,8 +226,10 @@ def bloom(bud_id: int):
         if not bud:
             console.print(f"[red]Bud not found:[/red] {bud_id}")
             return
+        old_status = bud.status
         bud.status = "bloomed"
         bud.completed_at = datetime.utcnow()
+        log_activity(session, 'bud', bud.id, 'status_changed', f'{old_status} → bloomed')
         session.commit()
         console.print(f"[green]🌸 Bloomed:[/green] {bud.title}")
 
@@ -174,7 +251,9 @@ def mulch(bud_id: int):
         if not bud:
             console.print(f"[red]Bud not found:[/red] {bud_id}")
             return
+        old_status = bud.status
         bud.status = "mulch"
+        log_activity(session, 'bud', bud.id, 'status_changed', f'{old_status} → mulch')
         session.commit()
         console.print(f"[yellow]Mulched:[/yellow] {bud.title}")
 
@@ -198,8 +277,10 @@ def start(bud_id: int):
         if bud.status == "budding":
             console.print(f"[yellow]Already budding:[/yellow] {bud.title}")
             return
+        old_status = bud.status
         bud.status = "budding"
         bud.started_at = datetime.utcnow()
+        log_activity(session, 'bud', bud.id, 'status_changed', f'{old_status} → budding')
         session.commit()
         console.print(f"[green]Started budding:[/green] {bud.title}")
 
@@ -227,6 +308,7 @@ def plant(bud_id: int):
             return
         bud.status = "dormant"
         bud.clarified_at = datetime.utcnow()
+        log_activity(session, 'bud', bud.id, 'status_changed', 'seed → dormant')
         session.commit()
         console.print(f"[green]Planted:[/green] {bud.title} (now dormant, ready to grow)")
 
@@ -2266,6 +2348,417 @@ def grove_archive(grove_id: int):
 
 
 # =============================================================================
+# ACTIVITY & REFERENCE COMMANDS
+# =============================================================================
+
+
+def _get_session_id() -> str | None:
+    """Get the current Claude session ID from environment."""
+    import os
+    return os.environ.get('CLAUDE_SESSION_ID')
+
+
+@main.command(name="log")
+@click.argument("ref")
+@click.argument("message")
+def log_entry(ref: str, message: str):
+    """Append a log entry to any item's activity log.
+
+    Uses type prefixes: g:1 (grove), t:5 (trunk), br:12 (branch), b:45 (bud)
+
+    Example: gv log b:45 "Started working on authentication"
+    Example: gv log br:12 "Blocked on API design decision"
+    """
+    from grove.db import get_session
+    from grove.models import ActivityLog
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    with get_session() as session:
+        item, _ = get_item_by_ref(session, item_type, item_id)
+        if not item:
+            console.print(f"[red]Not found:[/red] {ref}")
+            return
+
+        log = ActivityLog(
+            item_type=item_type,
+            item_id=item_id,
+            event_type='log',
+            content=message,
+            session_id=_get_session_id()
+        )
+        session.add(log)
+        session.commit()
+
+        title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+        console.print(f"[green]Logged:[/green] {ref} ({title})")
+        console.print(f"  [dim]{message}[/dim]")
+
+
+@main.command()
+@click.argument("ref")
+@click.argument("value")
+@click.option("--note", is_flag=True, help="Mark as Obsidian note")
+@click.option("--file", "is_file", is_flag=True, help="Mark as file path")
+@click.option("--url", is_flag=True, help="Mark as URL")
+@click.option("--label", "-l", help="Optional label for the reference")
+def ref(ref: str, value: str, note: bool, is_file: bool, url: bool, label: str | None):
+    """Add a structured reference to any item.
+
+    Uses type prefixes: g:1 (grove), t:5 (trunk), br:12 (branch), b:45 (bud)
+
+    Auto-detects type if not specified:
+    - [[Note Name]] -> note
+    - /path or ~/path -> file
+    - http:// or https:// -> url
+
+    Example: gv ref b:45 "[[Project Notes]]"
+    Example: gv ref br:12 --file ~/code/project/README.md
+    Example: gv ref t:3 --url https://github.com/org/repo --label "Main repo"
+    """
+    from grove.db import get_session
+    from grove.models import Ref as RefModel, ActivityLog
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    # Determine ref_type
+    if note:
+        ref_type = 'note'
+    elif is_file:
+        ref_type = 'file'
+    elif url:
+        ref_type = 'url'
+    else:
+        # Auto-detect
+        if value.startswith('[[') and value.endswith(']]'):
+            ref_type = 'note'
+        elif value.startswith('/') or value.startswith('~/'):
+            ref_type = 'file'
+        elif value.startswith('http://') or value.startswith('https://'):
+            ref_type = 'url'
+        else:
+            # Default to note for unrecognized patterns
+            ref_type = 'note'
+            console.print(f"[dim]Auto-detected as note. Use --file or --url to override.[/dim]")
+
+    with get_session() as session:
+        item, _ = get_item_by_ref(session, item_type, item_id)
+        if not item:
+            console.print(f"[red]Not found:[/red] {ref}")
+            return
+
+        new_ref = RefModel(
+            item_type=item_type,
+            item_id=item_id,
+            ref_type=ref_type,
+            value=value,
+            label=label
+        )
+        session.add(new_ref)
+
+        # Log the ref addition
+        log = ActivityLog(
+            item_type=item_type,
+            item_id=item_id,
+            event_type='ref_added',
+            content=f"[{ref_type}] {value}",
+            session_id=_get_session_id()
+        )
+        session.add(log)
+        session.commit()
+
+        title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+        label_display = f" ({label})" if label else ""
+        console.print(f"[green]Added ref:[/green] {ref} ({title})")
+        console.print(f"  [{ref_type}] {value}{label_display}")
+
+
+@main.command()
+@click.argument("ref")
+@click.option("--since", help="Filter to activity since (e.g., '2 days ago', '1 week')")
+@click.option("--limit", "-n", default=20, help="Max entries to show")
+def activity(ref: str, since: str | None, limit: int):
+    """Show activity timeline for any item.
+
+    Uses type prefixes: g:1 (grove), t:5 (trunk), br:12 (branch), b:45 (bud)
+
+    Example: gv activity b:45
+    Example: gv activity br:12 --since "2 days ago"
+    Example: gv activity t:3 -n 50
+    """
+    from datetime import datetime, timedelta
+    from grove.db import get_session
+    from grove.models import ActivityLog
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    with get_session() as session:
+        item, _ = get_item_by_ref(session, item_type, item_id)
+        if not item:
+            console.print(f"[red]Not found:[/red] {ref}")
+            return
+
+        query = session.query(ActivityLog).filter(
+            ActivityLog.item_type == item_type,
+            ActivityLog.item_id == item_id
+        )
+
+        # Parse --since if provided
+        if since:
+            import re
+            now = datetime.utcnow()
+            # Simple parsing for common patterns
+            match = re.match(r'(\d+)\s*(day|days|week|weeks|hour|hours|h|d|w)', since.lower())
+            if match:
+                num = int(match.group(1))
+                unit = match.group(2)
+                if unit in ('hour', 'hours', 'h'):
+                    delta = timedelta(hours=num)
+                elif unit in ('day', 'days', 'd'):
+                    delta = timedelta(days=num)
+                elif unit in ('week', 'weeks', 'w'):
+                    delta = timedelta(weeks=num)
+                else:
+                    delta = timedelta(days=num)
+                since_dt = now - delta
+                query = query.filter(ActivityLog.created_at >= since_dt)
+            else:
+                console.print(f"[yellow]Could not parse --since '{since}', showing all[/yellow]")
+
+        activities = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+
+        title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+        console.print()
+        console.print(f"[bold]Activity for {ref}:[/bold] {title}")
+        console.print()
+
+        if not activities:
+            console.print("[dim]No activity recorded[/dim]")
+            return
+
+        now = datetime.utcnow()
+
+        for a in activities:
+            ago = _format_relative_time(a.created_at)
+            content = f": {a.content}" if a.content else ""
+            session_marker = " [dim]•[/dim]" if a.session_id else ""
+            console.print(f"  [{a.event_type}] {ago}{content}{session_marker}")
+
+        console.print()
+        total = session.query(ActivityLog).filter(
+            ActivityLog.item_type == item_type,
+            ActivityLog.item_id == item_id
+        ).count()
+        if total > limit:
+            console.print(f"[dim]Showing {limit} of {total} entries[/dim]")
+
+
+# =============================================================================
+# CONTEXT COMMAND - Show full context for an item
+# =============================================================================
+
+
+def _format_relative_time(dt) -> str:
+    """Format a datetime as relative time (e.g., '2h ago', '3d ago')."""
+    from datetime import datetime, timezone
+
+    if dt is None:
+        return "never"
+
+    # Handle timezone-aware vs naive datetimes
+    now = datetime.now(timezone.utc) if dt.tzinfo else datetime.utcnow()
+    diff = now - dt
+
+    seconds = diff.total_seconds()
+    if seconds < 60:
+        return "just now"
+    elif seconds < 3600:
+        mins = int(seconds / 60)
+        return f"{mins}m ago"
+    elif seconds < 86400:
+        hours = int(seconds / 3600)
+        return f"{hours}h ago"
+    else:
+        days = int(seconds / 86400)
+        return f"{days}d ago"
+
+
+@main.command()
+@click.argument("ref")
+@click.option("--peek", is_flag=True, help="View without updating last_checked_at")
+@click.option("--brief", is_flag=True, help="Show condensed output for scanning")
+def context(ref: str, peek: bool, brief: bool):
+    """Show full context for an item with temporal awareness.
+
+    Uses type prefixes: g:1 (grove), t:16 (trunk), br:12 (branch), b:45 (bud)
+
+    Shows item details, hierarchy, refs, and recent activity.
+    Updates last_checked_at unless --peek is used.
+
+    Example: gv context b:45
+    Example: gv context br:12 --brief
+    Example: gv context t:16 --peek
+    """
+    from datetime import datetime, timedelta
+    from grove.db import get_session
+    from grove.models import Grove, Trunk, Branch, Bud, ActivityLog, Ref
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    with get_session() as session:
+        item, model = get_item_by_ref(session, item_type, item_id)
+
+        if not item:
+            console.print(f"[red]{item_type.title()} not found:[/red] {item_id}")
+            return
+
+        # Get last_checked_at before we update it
+        last_checked = item.last_checked_at
+
+        # Calculate activity since last check
+        activity_query = session.query(ActivityLog).filter(
+            ActivityLog.item_type == item_type,
+            ActivityLog.item_id == item_id
+        )
+
+        if last_checked:
+            new_activity = activity_query.filter(ActivityLog.created_at > last_checked).count()
+        else:
+            new_activity = activity_query.count()
+
+        total_activity = activity_query.count()
+
+        # Get refs
+        refs = session.query(Ref).filter(
+            Ref.item_type == item_type,
+            Ref.item_id == item_id
+        ).all()
+
+        if brief:
+            # Brief output for scanning
+            title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+            status = getattr(item, 'status', '-')
+
+            last_str = "never" if not last_checked else _format_relative_time(last_checked)
+            new_str = f"+{new_activity}" if new_activity else ""
+
+            console.print(f"[bold]{ref}[/bold] {title} [{status}] checked:{last_str} {new_str}")
+        else:
+            # Full output
+            console.print()
+
+            # Header
+            title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+            icon = {'grove': '🌳', 'trunk': '🪵', 'branch': '🌿', 'bud': '🌱'}.get(item_type, '')
+            console.print(f"[bold]{icon} {item_type.title()}:[/bold] {title}")
+            console.print(f"  [dim]id: {item_id}[/dim]", end="")
+
+            if hasattr(item, 'status'):
+                console.print(f" [dim]| status: {item.status}[/dim]", end="")
+            if hasattr(item, 'priority'):
+                console.print(f" [dim]| priority: {item.priority}[/dim]", end="")
+            console.print()
+
+            if hasattr(item, 'description') and item.description:
+                console.print(f"  [dim]{item.description}[/dim]")
+
+            # Temporal info
+            console.print()
+            console.print("[bold]Temporal[/bold]")
+            if last_checked:
+                console.print(f"  Last checked: {_format_relative_time(last_checked)}")
+                if new_activity:
+                    console.print(f"  [yellow]New activity since last check: {new_activity}[/yellow]")
+            else:
+                console.print("  [dim]Never checked[/dim]")
+            console.print(f"  Total activity entries: {total_activity}")
+
+            # Refs
+            if refs:
+                console.print()
+                console.print("[bold]References[/bold]")
+                for r in refs:
+                    label = f" ({r.label})" if r.label else ""
+                    console.print(f"  [{r.ref_type}] {r.value}{label}")
+
+            # Show hierarchy based on item type
+            if item_type == 'bud':
+                console.print()
+                console.print("[bold]Hierarchy[/bold]")
+                if item.branch_id:
+                    branch = session.query(Branch).filter(Branch.id == item.branch_id).first()
+                    if branch:
+                        console.print(f"  ↑ Branch: {branch.title} (br:{branch.id})")
+                        if branch.trunk_id:
+                            trunk = session.query(Trunk).filter(Trunk.id == branch.trunk_id).first()
+                            if trunk:
+                                console.print(f"    ↑ Trunk: {trunk.title} (t:{trunk.id})")
+                elif item.trunk_id:
+                    trunk = session.query(Trunk).filter(Trunk.id == item.trunk_id).first()
+                    if trunk:
+                        console.print(f"  ↑ Trunk: {trunk.title} (t:{trunk.id})")
+
+            elif item_type == 'branch':
+                console.print()
+                console.print("[bold]Hierarchy[/bold]")
+                if item.trunk_id:
+                    trunk = session.query(Trunk).filter(Trunk.id == item.trunk_id).first()
+                    if trunk:
+                        console.print(f"  ↑ Trunk: {trunk.title} (t:{trunk.id})")
+                bud_count = session.query(Bud).filter(Bud.branch_id == item_id).count()
+                console.print(f"  ↓ Buds: {bud_count}")
+
+            elif item_type == 'trunk':
+                console.print()
+                console.print("[bold]Hierarchy[/bold]")
+                if item.grove_id:
+                    grove = session.query(Grove).filter(Grove.id == item.grove_id).first()
+                    if grove:
+                        icon = grove.icon or '🌳'
+                        console.print(f"  ↑ Grove: {icon} {grove.name} (g:{grove.id})")
+                branch_count = session.query(Branch).filter(Branch.trunk_id == item_id).count()
+                console.print(f"  ↓ Branches: {branch_count}")
+
+            # Recent activity
+            recent = session.query(ActivityLog).filter(
+                ActivityLog.item_type == item_type,
+                ActivityLog.item_id == item_id
+            ).order_by(ActivityLog.created_at.desc()).limit(5).all()
+
+            if recent:
+                console.print()
+                console.print("[bold]Recent Activity[/bold]")
+                for entry in recent:
+                    time_str = _format_relative_time(entry.created_at)
+                    content_str = f": {entry.content[:50]}..." if entry.content and len(entry.content) > 50 else (f": {entry.content}" if entry.content else "")
+                    console.print(f"  [{entry.event_type}] {time_str}{content_str}")
+
+            console.print()
+
+        # Update last_checked_at unless --peek
+        if not peek:
+            item.last_checked_at = datetime.utcnow()
+            log_activity(session, item_type, item_id, 'checked')
+            session.commit()
+
+
+# =============================================================================
 # ALIASES for backward compatibility and convenience
 # =============================================================================
 
@@ -2287,8 +2780,10 @@ def done_alias(bud_id: int):
         if not bud:
             console.print(f"[red]Bud not found:[/red] {bud_id}")
             return
+        old_status = bud.status
         bud.status = "bloomed"
         bud.completed_at = datetime.utcnow()
+        log_activity(session, 'bud', bud.id, 'status_changed', f'{old_status} → bloomed')
         session.commit()
         console.print(f"[green]🌸 Bloomed:[/green] {bud.title}")
 
