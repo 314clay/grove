@@ -1721,7 +1721,7 @@ def habit():
 
 @habit.command(name="new")
 @click.argument("name")
-@click.option("--frequency", "-f", default="daily", type=click.Choice(["daily", "weekly", "3x_week"]))
+@click.option("--frequency", "-f", default="daily", type=click.Choice(["daily", "weekly", "2x_week", "3x_week"]))
 @click.option("--grove", "-g", "grove_id", type=int, help="Link to a grove")
 def habit_new(name: str, frequency: str, grove_id: int | None):
     """Create a new habit to track.
@@ -1785,7 +1785,7 @@ def habit_list(show_all: bool):
             ).first()
 
             status = "[green]✓[/green]" if today_done else "[dim]○[/dim]"
-            freq_label = {"daily": "d", "weekly": "w", "3x_week": "3x"}[habit.frequency]
+            freq_label = {"daily": "d", "weekly": "w", "2x_week": "2x", "3x_week": "3x"}[habit.frequency]
             console.print(f"{status} {habit.id}: {habit.title} ({freq_label}) [{week_count}/7d]")
 
 

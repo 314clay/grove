@@ -200,7 +200,7 @@ CREATE TABLE todos.habits (
     description TEXT,
 
     -- Frequency configuration
-    frequency VARCHAR(20) DEFAULT 'daily' CHECK (frequency IN ('daily', 'weekly', 'monthly', 'custom')),
+    frequency VARCHAR(20) DEFAULT 'daily' CHECK (frequency IN ('daily', 'weekly', '2x_week', '3x_week', 'monthly', 'custom')),
     frequency_config JSONB,  -- e.g., {"days": ["mon", "wed", "fri"]} or {"interval": 3}
 
     -- Tracking
