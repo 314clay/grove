@@ -93,7 +93,7 @@ def log_activity(session, item_type: str, item_id: int, event_type: str, content
 
 @click.group()
 @click.version_option()
-def main():
+def _main_group():
     """Grove - Botanical task management with hierarchical alignment.
 
     Your work grows from seeds to blooming buds on stems,
@@ -104,12 +104,31 @@ def main():
     pass
 
 
+def main():
+    """Wrapper for the CLI that shows help on missing arguments."""
+    try:
+        _main_group(standalone_mode=False)
+    except click.MissingParameter as e:
+        # The exception contains the context - show help for the specific command
+        if e.ctx:
+            click.echo(e.ctx.get_help())
+            raise SystemExit(0)
+        else:
+            e.show()
+            raise SystemExit(e.exit_code)
+    except click.ClickException as e:
+        e.show()
+        raise SystemExit(e.exit_code)
+    except Exception:
+        raise
+
+
 # =============================================================================
 # BUD MANAGEMENT (Tasks)
 # =============================================================================
 
 
-@main.command()
+@_main_group.command()
 @click.argument("title")
 @click.option("--stem", "-b", type=int, help="Plant on stem (project) ID")
 @click.option("--priority", type=click.Choice(["urgent", "high", "medium", "low"]), default="medium", help="Bud priority")
@@ -138,7 +157,7 @@ def add(title: str, stem: int | None, priority: str, context: str | None):
         console.print(f"[green]Planted seed:[/green] {bud.title} (id: {bud.id})")
 
 
-@main.command()
+@_main_group.command()
 def seeds():
     """Show unprocessed seeds (inbox items).
 
@@ -158,7 +177,7 @@ def seeds():
             console.print(f"  {bud.id}: {bud.title}")
 
 
-@main.command(name="list")
+@_main_group.command(name="list")
 def list_buds():
     """Show all budding (active) work."""
     from grove.db import get_session
@@ -174,7 +193,7 @@ def list_buds():
             console.print(f"  {bud.id}: {bud.title}")
 
 
-@main.command()
+@_main_group.command()
 def pulse():
     """Check the pulse - show actionable, unblocked buds.
 
@@ -210,7 +229,7 @@ def pulse():
             console.print(f"  {bud.id}: {bud.title}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("bud_id", type=int)
 def bloom(bud_id: int):
     """Mark a bud as bloomed (complete).
@@ -234,7 +253,7 @@ def bloom(bud_id: int):
         console.print(f"[green]🌸 Bloomed:[/green] {bud.title}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("bud_id", type=int)
 def mulch(bud_id: int):
     """Drop a bud to the mulch (abandon it).
@@ -258,7 +277,7 @@ def mulch(bud_id: int):
         console.print(f"[yellow]Mulched:[/yellow] {bud.title}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("bud_id", type=int)
 def start(bud_id: int):
     """Start working on a bud (move to budding status).
@@ -285,7 +304,7 @@ def start(bud_id: int):
         console.print(f"[green]Started budding:[/green] {bud.title}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("bud_id", type=int)
 def plant(bud_id: int):
     """Plant a seed (move from seed to dormant status).
@@ -318,7 +337,7 @@ def plant(bud_id: int):
 # =============================================================================
 
 
-@main.command()
+@_main_group.command()
 @click.argument("blocker_id", type=int)
 @click.argument("blocked_id", type=int)
 def blocks(blocker_id: int, blocked_id: int):
@@ -366,7 +385,7 @@ def blocks(blocker_id: int, blocked_id: int):
         console.print(f"[green]Created:[/green] {blocker.title} → blocks → {blocked.title}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("blocker_id", type=int)
 @click.argument("blocked_id", type=int)
 def unblock(blocker_id: int, blocked_id: int):
@@ -392,7 +411,7 @@ def unblock(blocker_id: int, blocked_id: int):
         console.print(f"[green]Removed:[/green] {blocker_id} no longer blocks {blocked_id}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("bud_ids", nargs=-1, required=True, type=int)
 def chain(bud_ids: tuple):
     """Chain buds in sequence (each blocks the next).
@@ -444,7 +463,7 @@ def chain(bud_ids: tuple):
         console.print(f"[green]Chained ({created} new):[/green] {chain_display}")
 
 
-@main.command()
+@_main_group.command()
 def blocked():
     """Show buds that are blocked by incomplete buds."""
     from grove.db import get_session
@@ -489,7 +508,7 @@ def blocked():
 # =============================================================================
 
 
-@main.command()
+@_main_group.command()
 @click.argument("bud_id", type=int)
 def why(bud_id: int):
     """Trace a bud up through stem → trunk → grove.
@@ -598,7 +617,7 @@ def why(bud_id: int):
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def stem():
     """Manage stems (projects)."""
     pass
@@ -756,7 +775,7 @@ def unlink(stem_id: int):
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def beads():
     """Beads integration commands for syncing with AI-native issue tracking."""
     pass
@@ -1258,7 +1277,7 @@ def hanging(stem_id: int, recursive: bool):
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def bead():
     """Individual bead operations (hang, unhang, show)."""
     pass
@@ -1440,7 +1459,7 @@ def show(bead_id: str):
 # =============================================================================
 
 
-@main.command()
+@_main_group.command()
 def overview():
     """Show full hierarchy tree with counts and progress.
 
@@ -1570,7 +1589,7 @@ def overview():
 # =============================================================================
 
 
-@main.command()
+@_main_group.command()
 def review():
     """Guided weekly review flow.
 
@@ -1694,7 +1713,7 @@ def review():
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def habit():
     """Habit tracking commands."""
     pass
@@ -1905,7 +1924,7 @@ def habit_resume(habit_id: int):
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def trunk():
     """Manage trunks (strategic initiatives)."""
     pass
@@ -2161,7 +2180,7 @@ def trunk_link(trunk_id: int, grove_id: int):
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def grove():
     """Manage groves (life areas like Health, Coding, etc.)."""
     pass
@@ -2358,7 +2377,7 @@ def _get_session_id() -> str | None:
     return os.environ.get('CLAUDE_SESSION_ID')
 
 
-@main.command(name="log")
+@_main_group.command(name="log")
 @click.argument("ref")
 @click.argument("message")
 def log_entry(ref: str, message: str):
@@ -2399,7 +2418,7 @@ def log_entry(ref: str, message: str):
         console.print(f"  [dim]{message}[/dim]")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("ref")
 @click.argument("value")
 @click.option("--note", is_flag=True, help="Mark as Obsidian note")
@@ -2481,7 +2500,7 @@ def ref(ref: str, value: str, note: bool, is_file: bool, url: bool, label: str |
         console.print(f"  [{ref_type}] {value}{label_display}")
 
 
-@main.command()
+@_main_group.command()
 @click.argument("ref")
 @click.option("--since", help="Filter to activity since (e.g., '2 days ago', '1 week')")
 @click.option("--limit", "-n", default=20, help="Max entries to show")
@@ -2595,7 +2614,7 @@ def _format_relative_time(dt) -> str:
         return f"{days}d ago"
 
 
-@main.command()
+@_main_group.command()
 @click.argument("ref")
 @click.option("--peek", is_flag=True, help="View without updating last_checked_at")
 @click.option("--brief", is_flag=True, help="Show condensed output for scanning")
@@ -2764,7 +2783,7 @@ def context(ref: str, peek: bool, brief: bool):
 
 
 # Keep 'done' as alias for 'bloom' for muscle memory
-@main.command(name="done")
+@_main_group.command(name="done")
 @click.argument("bud_id", type=int)
 def done_alias(bud_id: int):
     """Alias for 'bloom' - mark a bud as complete.
@@ -2789,7 +2808,7 @@ def done_alias(bud_id: int):
 
 
 # Keep 'inbox' as alias for 'seeds' for muscle memory
-@main.command(name="inbox")
+@_main_group.command(name="inbox")
 def inbox_alias():
     """Alias for 'seeds' - show unprocessed items.
 
@@ -2809,7 +2828,7 @@ def inbox_alias():
 
 
 # Keep 'now' as alias for 'pulse' for muscle memory
-@main.command(name="now")
+@_main_group.command(name="now")
 def now_alias():
     """Alias for 'pulse' - show actionable, unblocked buds.
 
@@ -2847,7 +2866,7 @@ def now_alias():
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def root():
     """Manage roots (source materials underlying your notes).
 
@@ -3102,7 +3121,7 @@ def root_list(source_type: str | None, limit: int):
             console.print()
 
 
-@main.command("roots")
+@_main_group.command("roots")
 @click.argument("ref")
 def show_roots(ref: str):
     """Show all roots linked to an item.
@@ -3158,7 +3177,7 @@ def show_roots(ref: str):
 # =============================================================================
 
 
-@main.group()
+@_main_group.group()
 def tidy():
     """Grove tidying commands for detecting and refactoring overgrown hierarchies.
 
@@ -3980,6 +3999,740 @@ def config(set_key: tuple | None):
 
         console.print()
         console.print("[dim]Use --set <key> <value> to change thresholds[/dim]")
+
+
+# =============================================================================
+# POLLEN - AI-generated ideas and external suggestions
+# =============================================================================
+
+
+def parse_duration(duration_str: str):
+    """Parse duration strings like '2 days', '1 hour', '30m', '7d'."""
+    from datetime import timedelta
+    import re
+
+    duration_str = duration_str.strip().lower()
+    patterns = [
+        (r'^(\d+)\s*d(?:ays?)?$', lambda m: timedelta(days=int(m.group(1)))),
+        (r'^(\d+)\s*h(?:ours?)?$', lambda m: timedelta(hours=int(m.group(1)))),
+        (r'^(\d+)\s*m(?:in(?:utes?)?)?$', lambda m: timedelta(minutes=int(m.group(1)))),
+        (r'^(\d+)\s*w(?:eeks?)?$', lambda m: timedelta(weeks=int(m.group(1)))),
+    ]
+    for pattern, converter in patterns:
+        match = re.match(pattern, duration_str)
+        if match:
+            return converter(match)
+    return None
+
+
+@_main_group.group()
+def pollen():
+    """Manage pollen (AI-generated ideas and external suggestions).
+
+    Pollen arrives from AI systems and external sources. It can be
+    reviewed and promoted to seeds (buds), or rejected.
+
+    Status lifecycle: pending -> seeded/rejected
+    """
+    pass
+
+
+@pollen.command(name="list")
+@click.option("--all", "show_all", is_flag=True, help="Include seeded/rejected pollen")
+@click.option("--source", "-s", help="Filter by source")
+@click.option("--since", help="Filter to pollen since (e.g., '2 days', '1 week')")
+@click.option("--limit", "-n", default=20, help="Max entries to show")
+def pollen_list(show_all: bool, source: str | None, since: str | None, limit: int):
+    """List pending pollen.
+
+    Example: gv pollen list
+    Example: gv pollen list --all
+    Example: gv pollen list --source claude --since "2 days"
+    """
+    from datetime import datetime, timedelta
+    from grove.db import get_session
+    from grove.models import Pollen
+
+    with get_session() as session:
+        query = session.query(Pollen)
+
+        if not show_all:
+            query = query.filter(Pollen.status == "pending")
+
+        if source:
+            query = query.filter(Pollen.source == source)
+
+        if since:
+            delta = parse_duration(since)
+            if delta:
+                since_dt = datetime.utcnow() - delta
+                query = query.filter(Pollen.created_at >= since_dt)
+            else:
+                console.print(f"[yellow]Could not parse --since '{since}', showing all[/yellow]")
+
+        pollen_items = query.order_by(Pollen.created_at.desc()).limit(limit).all()
+
+        if not pollen_items:
+            console.print("[dim]No pollen found[/dim]")
+            return
+
+        console.print()
+        filter_label = "" if show_all else " (pending)"
+        console.print(f"[bold]Pollen{filter_label}:[/bold]")
+        console.print()
+
+        for p in pollen_items:
+            status_icon = {
+                "pending": "[yellow]o[/yellow]",
+                "seeded": "[green]●[/green]",
+                "rejected": "[dim]x[/dim]",
+            }.get(p.status, "?")
+
+            preview = p.content[:60] + "..." if len(p.content) > 60 else p.content
+            preview = preview.replace('\n', ' ')
+
+            confidence_str = f" ({p.confidence:.0%})" if p.confidence is not None else ""
+            console.print(f"  {status_icon} {p.id}: [{p.source}]{confidence_str} {preview}")
+
+        console.print()
+        total = session.query(Pollen).filter(Pollen.status == "pending").count()
+        console.print(f"[dim]{total} pending pollen total[/dim]")
+
+
+@pollen.command(name="show")
+@click.argument("pollen_id", type=int)
+def pollen_show(pollen_id: int):
+    """Show full details of a pollen item.
+
+    Example: gv pollen show 5
+    """
+    from grove.db import get_session
+    from grove.models import Pollen, Bud
+
+    with get_session() as session:
+        p = session.query(Pollen).filter(Pollen.id == pollen_id).first()
+        if not p:
+            console.print(f"[red]Pollen not found:[/red] {pollen_id}")
+            return
+
+        console.print()
+        console.print(f"[bold]Pollen {p.id}[/bold] [{p.status}]")
+        console.print()
+
+        console.print(f"[cyan]Source:[/cyan] {p.source}")
+        if p.confidence is not None:
+            console.print(f"[cyan]Confidence:[/cyan] {p.confidence:.1%}")
+        console.print()
+
+        console.print(f"[cyan]Content:[/cyan]")
+        console.print(f"  {p.content}")
+        console.print()
+
+        if p.source_meta:
+            console.print(f"[cyan]Metadata:[/cyan]")
+            import json
+            console.print(f"  {json.dumps(p.source_meta, indent=2)}")
+            console.print()
+
+        if p.status == "seeded" and p.seed_id:
+            bud = session.query(Bud).filter(Bud.id == p.seed_id).first()
+            if bud:
+                console.print(f"[cyan]Became seed:[/cyan] b:{bud.id} {bud.title}")
+            else:
+                console.print(f"[cyan]Became seed:[/cyan] b:{p.seed_id} (deleted)")
+            console.print()
+
+        if p.status == "rejected" and p.reject_reason:
+            console.print(f"[cyan]Reject reason:[/cyan] {p.reject_reason}")
+            console.print()
+
+        console.print(f"[dim]Created: {p.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+        if p.reviewed_at:
+            console.print(f"[dim]Reviewed: {p.reviewed_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+
+
+@pollen.command(name="pollinate")
+@click.argument("pollen_id", type=int)
+@click.option("--stem", "-s", "stem_id", type=int, help="Plant seed on this stem")
+def pollen_pollinate(pollen_id: int, stem_id: int | None):
+    """Promote pollen to a seed (bud).
+
+    Creates a new bud with status 'seed' from the pollen content.
+
+    Example: gv pollen pollinate 5
+    Example: gv pollen pollinate 5 --stem 3
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Pollen, Bud, Stem
+
+    with get_session() as session:
+        p = session.query(Pollen).filter(Pollen.id == pollen_id).first()
+        if not p:
+            console.print(f"[red]Pollen not found:[/red] {pollen_id}")
+            return
+
+        if p.status != "pending":
+            console.print(f"[yellow]Pollen already {p.status}[/yellow]")
+            return
+
+        if stem_id:
+            stem = session.query(Stem).filter(Stem.id == stem_id).first()
+            if not stem:
+                console.print(f"[red]Stem not found:[/red] {stem_id}")
+                return
+
+        # Create the seed
+        bud = Bud(
+            title=p.content[:500],  # Truncate long content for title
+            description=p.content if len(p.content) > 500 else None,
+            stem_id=stem_id,
+            status="seed",
+        )
+        session.add(bud)
+        session.flush()  # Get the bud ID
+
+        # Update pollen
+        p.status = "seeded"
+        p.seed_id = bud.id
+        p.reviewed_at = datetime.utcnow()
+
+        log_activity(session, 'bud', bud.id, 'created', f'From pollen {pollen_id}')
+        session.commit()
+
+        stem_info = f" on stem {stem_id}" if stem_id else ""
+        console.print(f"[green]Pollinated:[/green] Created seed b:{bud.id}{stem_info}")
+        console.print(f"  [dim]{bud.title[:60]}...[/dim]" if len(bud.title) > 60 else f"  [dim]{bud.title}[/dim]")
+
+
+@pollen.command(name="reject")
+@click.argument("pollen_id", type=int)
+@click.option("--reason", "-r", help="Reason for rejection")
+def pollen_reject(pollen_id: int, reason: str | None):
+    """Reject pollen (mark as not useful).
+
+    Example: gv pollen reject 5
+    Example: gv pollen reject 5 --reason "Not actionable"
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Pollen
+
+    with get_session() as session:
+        p = session.query(Pollen).filter(Pollen.id == pollen_id).first()
+        if not p:
+            console.print(f"[red]Pollen not found:[/red] {pollen_id}")
+            return
+
+        if p.status != "pending":
+            console.print(f"[yellow]Pollen already {p.status}[/yellow]")
+            return
+
+        p.status = "rejected"
+        p.reject_reason = reason
+        p.reviewed_at = datetime.utcnow()
+        session.commit()
+
+        reason_info = f" ({reason})" if reason else ""
+        console.print(f"[yellow]Rejected:[/yellow] Pollen {pollen_id}{reason_info}")
+
+
+@pollen.command(name="add")
+@click.argument("content")
+@click.option("--source", "-s", default="manual", help="Source of the pollen")
+@click.option("--confidence", "-c", type=float, help="Confidence score (0.0-1.0)")
+@click.option("--meta", "-m", help="JSON metadata")
+def pollen_add(content: str, source: str, confidence: float | None, meta: str | None):
+    """Add pollen manually.
+
+    Example: gv pollen add "Consider adding dark mode"
+    Example: gv pollen add "Review API design" --source claude --confidence 0.8
+    Example: gv pollen add "From meeting notes" --meta '{"meeting": "2025-01-15"}'
+    """
+    import json
+    from grove.db import get_session
+    from grove.models import Pollen
+
+    source_meta = None
+    if meta:
+        try:
+            source_meta = json.loads(meta)
+        except json.JSONDecodeError:
+            console.print(f"[red]Invalid JSON in --meta:[/red] {meta}")
+            return
+
+    if confidence is not None and not (0.0 <= confidence <= 1.0):
+        console.print("[red]Confidence must be between 0.0 and 1.0[/red]")
+        return
+
+    with get_session() as session:
+        p = Pollen(
+            content=content,
+            source=source,
+            source_meta=source_meta,
+            confidence=confidence,
+        )
+        session.add(p)
+        session.commit()
+
+        preview = content[:60] + "..." if len(content) > 60 else content
+        console.print(f"[green]Added pollen {p.id}:[/green] [{source}] {preview}")
+
+
+# =============================================================================
+# DEW - Ambient data signals
+# =============================================================================
+
+
+@_main_group.group()
+def dew():
+    """Manage dew (ambient data signals for context enrichment).
+
+    Dew condenses from the environment and nourishes existing items.
+    It provides context without creating new work items.
+
+    Status lifecycle: fresh -> absorbed/evaporated
+    """
+    pass
+
+
+@dew.command(name="list")
+@click.option("--all", "show_all", is_flag=True, help="Include absorbed/evaporated dew")
+@click.option("--source", "-s", help="Filter by source")
+@click.option("--since", help="Filter to dew since (e.g., '2 days', '1 week')")
+@click.option("--limit", "-n", default=20, help="Max entries to show")
+def dew_list(show_all: bool, source: str | None, since: str | None, limit: int):
+    """List fresh dew.
+
+    Example: gv dew list
+    Example: gv dew list --all
+    Example: gv dew list --source calendar --since "2 days"
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Dew
+
+    with get_session() as session:
+        query = session.query(Dew)
+
+        if not show_all:
+            query = query.filter(Dew.status == "fresh")
+
+        if source:
+            query = query.filter(Dew.source == source)
+
+        if since:
+            delta = parse_duration(since)
+            if delta:
+                since_dt = datetime.utcnow() - delta
+                query = query.filter(Dew.created_at >= since_dt)
+            else:
+                console.print(f"[yellow]Could not parse --since '{since}', showing all[/yellow]")
+
+        dew_items = query.order_by(Dew.created_at.desc()).limit(limit).all()
+
+        if not dew_items:
+            console.print("[dim]No dew found[/dim]")
+            return
+
+        console.print()
+        filter_label = "" if show_all else " (fresh)"
+        console.print(f"[bold]Dew{filter_label}:[/bold]")
+        console.print()
+
+        for d in dew_items:
+            status_icon = {
+                "fresh": "[cyan]o[/cyan]",
+                "absorbed": "[green]●[/green]",
+                "evaporated": "[dim]~[/dim]",
+            }.get(d.status, "?")
+
+            content_preview = ""
+            if d.content:
+                preview = d.content[:50] + "..." if len(d.content) > 50 else d.content
+                content_preview = f" {preview.replace(chr(10), ' ')}"
+
+            attached = ""
+            if d.item_type and d.item_id:
+                attached = f" -> {d.item_type}:{d.item_id}"
+
+            console.print(f"  {status_icon} {d.id}: [{d.source}]{content_preview}{attached}")
+
+        console.print()
+        total = session.query(Dew).filter(Dew.status == "fresh").count()
+        console.print(f"[dim]{total} fresh dew total[/dim]")
+
+
+@dew.command(name="show")
+@click.argument("dew_id", type=int)
+def dew_show(dew_id: int):
+    """Show full details of a dew item.
+
+    Example: gv dew show 5
+    """
+    import json
+    from grove.db import get_session
+    from grove.models import Dew
+
+    with get_session() as session:
+        d = session.query(Dew).filter(Dew.id == dew_id).first()
+        if not d:
+            console.print(f"[red]Dew not found:[/red] {dew_id}")
+            return
+
+        console.print()
+        console.print(f"[bold]Dew {d.id}[/bold] [{d.status}]")
+        console.print()
+
+        console.print(f"[cyan]Source:[/cyan] {d.source}")
+
+        if d.content:
+            console.print()
+            console.print(f"[cyan]Content:[/cyan]")
+            console.print(f"  {d.content}")
+
+        if d.payload:
+            console.print()
+            console.print(f"[cyan]Payload:[/cyan]")
+            console.print(f"  {json.dumps(d.payload, indent=2)}")
+
+        if d.source_meta:
+            console.print()
+            console.print(f"[cyan]Metadata:[/cyan]")
+            console.print(f"  {json.dumps(d.source_meta, indent=2)}")
+
+        if d.item_type and d.item_id:
+            console.print()
+            item, _ = get_item_by_ref(session, _expand_item_type(d.item_type), d.item_id)
+            if item:
+                title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+                console.print(f"[cyan]Attached to:[/cyan] {d.item_type}:{d.item_id} ({title})")
+            else:
+                console.print(f"[cyan]Attached to:[/cyan] {d.item_type}:{d.item_id} (deleted)")
+
+        console.print()
+        console.print(f"[dim]Created: {d.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+        if d.absorbed_at:
+            console.print(f"[dim]Absorbed: {d.absorbed_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+        if d.expires_at:
+            console.print(f"[dim]Expires: {d.expires_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+
+
+def _expand_item_type(short_type: str) -> str:
+    """Expand short item type to full name."""
+    type_map = {'g': 'grove', 't': 'trunk', 's': 'stem', 'b': 'bud', 'f': 'fruit'}
+    return type_map.get(short_type, short_type)
+
+
+def _contract_item_type(full_type: str) -> str:
+    """Contract full item type to short form."""
+    type_map = {'grove': 'g', 'trunk': 't', 'stem': 's', 'bud': 'b', 'fruit': 'f'}
+    return type_map.get(full_type, full_type)
+
+
+@dew.command(name="absorb")
+@click.argument("dew_id", type=int)
+@click.argument("ref")
+def dew_absorb(dew_id: int, ref: str):
+    """Attach dew to an item.
+
+    Example: gv dew absorb 5 b:45
+    Example: gv dew absorb 3 s:12
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Dew
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    with get_session() as session:
+        d = session.query(Dew).filter(Dew.id == dew_id).first()
+        if not d:
+            console.print(f"[red]Dew not found:[/red] {dew_id}")
+            return
+
+        if d.status != "fresh":
+            console.print(f"[yellow]Dew already {d.status}[/yellow]")
+            return
+
+        item, _ = get_item_by_ref(session, item_type, item_id)
+        if not item:
+            console.print(f"[red]Not found:[/red] {ref}")
+            return
+
+        d.item_type = _contract_item_type(item_type)
+        d.item_id = item_id
+        d.status = "absorbed"
+        d.absorbed_at = datetime.utcnow()
+
+        title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+        log_activity(session, item_type, item_id, 'dew_absorbed', f'Dew {dew_id} absorbed')
+        session.commit()
+
+        console.print(f"[green]Absorbed:[/green] Dew {dew_id} -> {ref} ({title})")
+
+
+@dew.command(name="on")
+@click.argument("ref")
+def dew_on(ref: str):
+    """Show dew absorbed by an item.
+
+    Example: gv dew on b:45
+    Example: gv dew on s:12
+    """
+    from grove.db import get_session
+    from grove.models import Dew
+
+    try:
+        item_type, item_id = parse_item_ref(ref)
+    except click.BadParameter as e:
+        console.print(f"[red]{e.message}[/red]")
+        return
+
+    short_type = _contract_item_type(item_type)
+
+    with get_session() as session:
+        item, _ = get_item_by_ref(session, item_type, item_id)
+        if not item:
+            console.print(f"[red]Not found:[/red] {ref}")
+            return
+
+        title = getattr(item, 'title', None) or getattr(item, 'name', 'Unknown')
+
+        dew_items = session.query(Dew).filter(
+            Dew.item_type == short_type,
+            Dew.item_id == item_id
+        ).order_by(Dew.created_at.desc()).all()
+
+        console.print()
+        console.print(f"[bold]Dew on {ref}:[/bold] {title}")
+        console.print()
+
+        if not dew_items:
+            console.print("[dim]No dew absorbed by this item[/dim]")
+            return
+
+        for d in dew_items:
+            content_preview = ""
+            if d.content:
+                preview = d.content[:50] + "..." if len(d.content) > 50 else d.content
+                content_preview = f" {preview.replace(chr(10), ' ')}"
+
+            console.print(f"  {d.id}: [{d.source}]{content_preview}")
+            console.print(f"    [dim]absorbed {_format_relative_time(d.absorbed_at)}[/dim]")
+
+
+@dew.command(name="evaporate")
+@click.argument("dew_id", type=int, required=False)
+@click.option("--older", help="Evaporate dew older than (e.g., '7 days', '2 weeks')")
+@click.option("--source", "-s", help="Filter by source when using --older")
+def dew_evaporate(dew_id: int | None, older: str | None, source: str | None):
+    """Dismiss dew (mark as evaporated).
+
+    Can evaporate a single dew by ID, or bulk evaporate old dew.
+
+    Example: gv dew evaporate 5
+    Example: gv dew evaporate --older "7 days"
+    Example: gv dew evaporate --older "2 weeks" --source webhook
+    """
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Dew
+
+    if dew_id is None and older is None:
+        console.print("[red]Must specify either a dew ID or --older[/red]")
+        return
+
+    with get_session() as session:
+        if dew_id is not None:
+            # Single evaporation
+            d = session.query(Dew).filter(Dew.id == dew_id).first()
+            if not d:
+                console.print(f"[red]Dew not found:[/red] {dew_id}")
+                return
+
+            if d.status != "fresh":
+                console.print(f"[yellow]Dew already {d.status}[/yellow]")
+                return
+
+            d.status = "evaporated"
+            session.commit()
+            console.print(f"[dim]Evaporated:[/dim] Dew {dew_id}")
+
+        else:
+            # Bulk evaporation
+            delta = parse_duration(older)
+            if not delta:
+                console.print(f"[red]Could not parse duration:[/red] {older}")
+                return
+
+            threshold = datetime.utcnow() - delta
+            query = session.query(Dew).filter(
+                Dew.status == "fresh",
+                Dew.created_at < threshold
+            )
+
+            if source:
+                query = query.filter(Dew.source == source)
+
+            count = query.count()
+            if count == 0:
+                source_info = f" from {source}" if source else ""
+                console.print(f"[dim]No fresh dew older than {older}{source_info}[/dim]")
+                return
+
+            query.update({"status": "evaporated"})
+            session.commit()
+
+            source_info = f" from {source}" if source else ""
+            console.print(f"[dim]Evaporated:[/dim] {count} dew item(s) older than {older}{source_info}")
+
+
+@dew.command(name="add")
+@click.option("--content", "-c", help="Text content")
+@click.option("--payload", "-p", help="JSON payload")
+@click.option("--source", "-s", default="manual", help="Source of the dew")
+@click.option("--expires", "-e", help="Expiration duration (e.g., '7 days', '2 weeks')")
+@click.option("--meta", "-m", help="JSON metadata")
+def dew_add(content: str | None, payload: str | None, source: str, expires: str | None, meta: str | None):
+    """Add dew manually.
+
+    Must provide either --content or --payload (or both).
+
+    Example: gv dew add --content "Meeting at 3pm"
+    Example: gv dew add --payload '{"event": "deploy", "version": "1.2.3"}' --source webhook
+    Example: gv dew add --content "Review needed" --expires "7 days"
+    """
+    import json
+    from datetime import datetime
+    from grove.db import get_session
+    from grove.models import Dew
+
+    if content is None and payload is None:
+        console.print("[red]Must provide either --content or --payload[/red]")
+        return
+
+    payload_dict = None
+    if payload:
+        try:
+            payload_dict = json.loads(payload)
+        except json.JSONDecodeError:
+            console.print(f"[red]Invalid JSON in --payload:[/red] {payload}")
+            return
+
+    source_meta = None
+    if meta:
+        try:
+            source_meta = json.loads(meta)
+        except json.JSONDecodeError:
+            console.print(f"[red]Invalid JSON in --meta:[/red] {meta}")
+            return
+
+    expires_at = None
+    if expires:
+        delta = parse_duration(expires)
+        if delta:
+            expires_at = datetime.utcnow() + delta
+        else:
+            console.print(f"[red]Could not parse expiration:[/red] {expires}")
+            return
+
+    with get_session() as session:
+        d = Dew(
+            content=content,
+            payload=payload_dict,
+            source=source,
+            source_meta=source_meta,
+            expires_at=expires_at,
+        )
+        session.add(d)
+        session.commit()
+
+        preview = ""
+        if content:
+            preview = content[:50] + "..." if len(content) > 50 else content
+        elif payload_dict:
+            preview = str(payload_dict)[:50] + "..."
+
+        expires_info = f" (expires in {expires})" if expires else ""
+        console.print(f"[green]Added dew {d.id}:[/green] [{source}] {preview}{expires_info}")
+
+
+@dew.command(name="l2")
+@click.option("--limit", "-n", default=20, help="Number of entries to show")
+@click.option("--since", help="Show entries since (e.g., '2 days', '1 week')")
+@click.option("--search", "-s", help="Search L2 content")
+def dew_l2(limit: int, since: str | None, search: str | None):
+    """Show L2 journal entries as potential dew sources.
+
+    L2 entries live in apple_notes.l2_entries (synced by gardener).
+    Use this to browse recent journal entries and decide what to absorb as dew.
+
+    Examples:
+        gv dew l2                      # Recent 20 entries
+        gv dew l2 -n 50                # Recent 50 entries
+        gv dew l2 --since "3 days"     # Last 3 days
+        gv dew l2 --search "auth"      # Search for "auth"
+    """
+    from grove.db import get_session
+    from sqlalchemy import text, desc
+    from datetime import datetime
+
+    with get_session() as session:
+        # Build query
+        query = "SELECT entry_timestamp, content FROM apple_notes.l2_entries"
+        conditions = []
+        params = {}
+
+        if since:
+            delta = parse_duration(since)
+            if delta:
+                since_dt = datetime.utcnow() - delta
+                conditions.append("entry_timestamp >= :since_dt")
+                params["since_dt"] = since_dt
+
+        if search:
+            conditions.append("content ILIKE :search")
+            params["search"] = f"%{search}%"
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY entry_timestamp DESC LIMIT :limit"
+        params["limit"] = limit
+
+        result = session.execute(text(query), params)
+        entries = result.fetchall()
+
+    if not entries:
+        console.print("[dim]No L2 entries found[/dim]")
+        console.print()
+        console.print("[dim]Tip: Sync L2 with gardener first:[/dim]")
+        console.print("  cd ~/code/gardener && gardener-sync-l2")
+        return
+
+    console.print()
+    console.print(f"[bold]L2 Journal Entries[/bold] ({len(entries)} entries)")
+    console.print()
+
+    for entry in entries:
+        ts, content = entry
+        ts_str = ts.strftime("%b %d, %Y at %I:%M %p") if ts else "No timestamp"
+
+        # Preview content (first 100 chars)
+        preview = content[:100] + "..." if len(content) > 100 else content
+        preview = preview.replace("\n", " ")
+
+        console.print(f"  [cyan]{ts_str}[/cyan]")
+        console.print(f"  {preview}")
+        console.print()
+
+    console.print("[dim]To create dew from an entry, use:[/dim]")
+    console.print('  gv dew add --content "<entry text>" --source l2:journal')
 
 
 if __name__ == "__main__":
