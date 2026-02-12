@@ -230,6 +230,86 @@ def pulse():
 
 
 @_main_group.command()
+def loose():
+    """Show loose items - stems, trunks, and buds without a home.
+
+    Loose stems have no trunk. Loose trunks have no grove.
+    Loose buds have no stem. These are items waiting to be
+    placed in the hierarchy.
+
+    Example: gv loose
+    """
+    from grove.db import get_session
+    from grove.models import Bud, Stem, Trunk
+
+    with get_session() as session:
+        # Sub-stems inherit trunk from their parent, so only stems
+        # whose entire ancestor chain has no trunk are truly loose
+        all_trunkless = session.query(Stem).filter(
+            Stem.trunk_id.is_(None),
+            Stem.status != "archived",
+        ).order_by(Stem.created_at.desc()).all()
+        trunkless_ids = {s.id for s in all_trunkless}
+        loose_stems = [s for s in all_trunkless
+                       if not s.parent_stem_id or s.parent_stem_id in trunkless_ids]
+
+        loose_trunks = session.query(Trunk).filter(
+            Trunk.grove_id.is_(None),
+            Trunk.status != "archived",
+        ).order_by(Trunk.created_at.desc()).all()
+
+        loose_buds = session.query(Bud).filter(
+            Bud.stem_id.is_(None),
+            Bud.trunk_id.is_(None),
+            Bud.status.notin_(["bloomed", "mulch", "seed"]),
+        ).order_by(Bud.created_at.desc()).all()
+
+        if not loose_stems and not loose_trunks and not loose_buds:
+            console.print("[dim]Nothing loose - everything is rooted[/dim]")
+            return
+
+        if loose_stems:
+            # Build parent→children map for nesting
+            stem_by_id = {s.id: s for s in loose_stems}
+            children_of = {}  # parent_stem_id → [stems]
+            roots = []
+            for s in loose_stems:
+                if s.parent_stem_id and s.parent_stem_id in stem_by_id:
+                    children_of.setdefault(s.parent_stem_id, []).append(s)
+                else:
+                    roots.append(s)
+
+            def print_stem(s, indent=1):
+                bud_count = session.query(Bud).filter(Bud.stem_id == s.id).count()
+                status = f" [dim]({s.status})[/dim]" if s.status != "active" else ""
+                prefix = "  " * indent
+                console.print(f"{prefix}s:{s.id} {s.title}{status} [dim]({bud_count} buds)[/dim]")
+                for child in children_of.get(s.id, []):
+                    print_stem(child, indent + 1)
+
+            console.print(f"[bold yellow]Loose Stems[/bold yellow] ({len(loose_stems)})")
+            for s in roots:
+                print_stem(s)
+            console.print()
+
+        if loose_trunks:
+            console.print(f"[bold magenta]Loose Trunks[/bold magenta] ({len(loose_trunks)})")
+            for t in loose_trunks:
+                stem_count = session.query(Stem).filter(Stem.trunk_id == t.id).count()
+                status = f" [dim]({t.status})[/dim]" if t.status != "active" else ""
+                console.print(f"  t:{t.id} {t.title}{status} [dim]({stem_count} stems)[/dim]")
+            console.print()
+
+        if loose_buds:
+            console.print(f"[bold cyan]Loose Buds[/bold cyan] ({len(loose_buds)})")
+            for b in loose_buds:
+                console.print(f"  b:{b.id} {b.title} [dim]({b.status})[/dim]")
+            console.print()
+
+        console.print(f"[dim]Use gv tidy graft to place items in the hierarchy[/dim]")
+
+
+@_main_group.command()
 @click.argument("bud_id", type=int)
 def bloom(bud_id: int):
     """Mark a bud as bloomed (complete).
@@ -3664,6 +3744,13 @@ def graft(refs: tuple, new_trunk: str | None, new_stem: str | None, parent: str 
                 console.print(f"[red]Target not found:[/red] {target}")
                 return
 
+        def cascade_trunk_id(stem, trunk_id):
+            """Propagate trunk_id to all descendant sub-stems."""
+            children = session.query(Stem).filter(Stem.parent_stem_id == stem.id).all()
+            for child in children:
+                child.trunk_id = trunk_id
+                cascade_trunk_id(child, trunk_id)
+
         # Move items
         moved = 0
         # For dry-run output, determine target display string
@@ -3686,6 +3773,10 @@ def graft(refs: tuple, new_trunk: str | None, new_stem: str | None, parent: str 
 
                 if dry_run:
                     console.print(f"[dim]Would move:[/dim] s:{item.id} {item.title} → {target_display}")
+                    # Show sub-stems that would inherit trunk_id
+                    sub_stems = session.query(Stem).filter(Stem.parent_stem_id == item.id).all()
+                    if sub_stems:
+                        console.print(f"[dim]  + {len(sub_stems)} sub-stem(s) would inherit trunk[/dim]")
                     moved += 1
                 else:
                     old_trunk = item.trunk_id
@@ -3699,6 +3790,9 @@ def graft(refs: tuple, new_trunk: str | None, new_stem: str | None, parent: str 
                         # Inherit trunk from target
                         if target_obj:
                             item.trunk_id = target_obj.trunk_id
+
+                    # Cascade trunk_id to all sub-stems
+                    cascade_trunk_id(item, item.trunk_id)
 
                     log_activity(session, 'stem', item.id, 'grafted',
                                 f'Moved from trunk:{old_trunk}/parent:{old_parent} to {target_type}:{target_id}')
@@ -4678,11 +4772,11 @@ def dew_l2(limit: int, since: str | None, search: str | None):
         gv dew l2 --since "3 days"     # Last 3 days
         gv dew l2 --search "auth"      # Search for "auth"
     """
-    from grove.db import get_session
+    from grove.db import get_dew_session
     from sqlalchemy import text, desc
     from datetime import datetime
 
-    with get_session() as session:
+    with get_dew_session() as session:
         # Build query
         query = "SELECT entry_timestamp, content FROM apple_notes.l2_entries"
         conditions = []
@@ -4733,6 +4827,98 @@ def dew_l2(limit: int, since: str | None, search: str | None):
 
     console.print("[dim]To create dew from an entry, use:[/dim]")
     console.print('  gv dew add --content "<entry text>" --source l2:journal')
+
+
+@dew.command(name="obsidian")
+@click.option("--limit", "-n", default=20, help="Number of notes to show")
+@click.option("--since", help="Show notes modified since (e.g., '2 days', '1 week')")
+@click.option("--search", "-s", help="Search note content")
+@click.option("--folder", "-f", help="Filter by folder name")
+@click.option("--tag", "-t", help="Filter by tag")
+def dew_obsidian(limit: int, since: str | None, search: str | None, folder: str | None, tag: str | None):
+    """Browse Obsidian vault notes as potential dew sources.
+
+    Notes live in obsidian.notes (synced by sync_obsidian.py).
+    Use this to browse your vault and decide what to absorb as dew.
+
+    Examples:
+        gv dew obsidian                          # Recent 20 notes
+        gv dew obsidian -n 50                    # Recent 50 notes
+        gv dew obsidian --since "3 days"         # Modified in last 3 days
+        gv dew obsidian --search "auth"          # Search for "auth"
+        gv dew obsidian --folder "Claude's Folder"  # Filter by folder
+        gv dew obsidian --tag "session-summary"  # Filter by tag
+    """
+    from grove.db import get_dew_session
+    from sqlalchemy import text
+    from datetime import datetime
+
+    with get_dew_session() as session:
+        query = "SELECT title, folder, tags, content, modified_at FROM obsidian.notes"
+        conditions = []
+        params = {}
+
+        if since:
+            delta = parse_duration(since)
+            if delta:
+                since_dt = datetime.utcnow() - delta
+                conditions.append("modified_at >= :since_dt")
+                params["since_dt"] = since_dt
+
+        if search:
+            conditions.append("(content ILIKE :search OR title ILIKE :search)")
+            params["search"] = f"%{search}%"
+
+        if folder:
+            conditions.append("folder = :folder")
+            params["folder"] = folder
+
+        if tag:
+            conditions.append(":tag = ANY(tags)")
+            params["tag"] = tag
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY modified_at DESC LIMIT :limit"
+        params["limit"] = limit
+
+        result = session.execute(text(query), params)
+        notes = result.fetchall()
+
+    if not notes:
+        console.print("[dim]No Obsidian notes found[/dim]")
+        console.print()
+        console.print("[dim]Tip: Sync your vault first:[/dim]")
+        console.print("  cd ~/p/connect/database/scripts && python sync_obsidian.py")
+        return
+
+    console.print()
+    console.print(f"[bold]Obsidian Notes[/bold] ({len(notes)} notes)")
+    console.print()
+
+    for note in notes:
+        title, note_folder, tags, content, modified_at = note
+        mod_str = modified_at.strftime("%b %d, %Y") if modified_at else "Unknown"
+        folder_str = f"  [{note_folder}]" if note_folder else ""
+
+        # Preview content (first 100 chars)
+        preview = ""
+        if content:
+            preview = content[:100].replace("\n", " ")
+            if len(content) > 100:
+                preview += "..."
+
+        console.print(f"  [cyan]{title}[/cyan]{folder_str}")
+        if tags:
+            tag_str = ", ".join(tags)
+            console.print(f"  [dim]tags: {tag_str}[/dim]")
+        if preview:
+            console.print(f"  {preview}")
+        console.print()
+
+    console.print("[dim]To create dew from a note, use:[/dim]")
+    console.print('  gv dew add --content "<excerpt>" --source obsidian:vault')
 
 
 if __name__ == "__main__":

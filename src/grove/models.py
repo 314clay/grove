@@ -18,12 +18,14 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
     Text,
     ARRAY,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -337,3 +339,52 @@ class TidyConfig(Base):
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Pollen(Base):
+    """AI-generated ideas and external suggestions - arrives from other systems.
+
+    Pollen carries "genetic material" from other sources and can fertilize
+    into seeds when promoted. Most pollen doesn't take root.
+
+    Status lifecycle: pending -> seeded/rejected
+    """
+    __tablename__ = "pollen"
+    __table_args__ = {"schema": "todos"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_meta: Mapped[Optional[dict]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+    seed_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todos.buds.id"))
+    reject_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    seed: Mapped[Optional["Bud"]] = relationship()
+
+
+class Dew(Base):
+    """Ambient data signals - context enrichment for existing items.
+
+    Dew condenses from the environment and nourishes existing plants.
+    It doesn't create new items, but enriches them with context.
+
+    Status lifecycle: fresh -> absorbed/evaporated
+    """
+    __tablename__ = "dew"
+    __table_args__ = {"schema": "todos"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content: Mapped[Optional[str]] = mapped_column(Text)
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_meta: Mapped[Optional[dict]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="fresh")
+    item_type: Mapped[Optional[str]] = mapped_column(String(10))
+    item_id: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    absorbed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

@@ -39,7 +39,9 @@ def setup_test_database():
         ["psql", "-d", "grove_test", "-c",
          "DROP TABLE IF EXISTS todos.activity_log CASCADE; "
          "DROP TABLE IF EXISTS todos.refs CASCADE; "
-         "DROP TABLE IF EXISTS todos.bead_links CASCADE;"],
+         "DROP TABLE IF EXISTS todos.bead_links CASCADE; "
+         "DROP TABLE IF EXISTS todos.pollen CASCADE; "
+         "DROP TABLE IF EXISTS todos.dew CASCADE;"],
         capture_output=True,
         text=True,
     )
@@ -55,7 +57,15 @@ def setup_test_database():
         pytest.fail(f"Failed to apply schema: {result.stderr}")
 
     # Apply migrations in order
-    for migration in ["002_bead_links.sql", "003_activity_refs.sql"]:
+    migrations = [
+        "002_bead_links.sql",
+        "003_activity_refs.sql",
+        "004_roots.sql",
+        "005_branch_nesting.sql",
+        "006_rename_branch_to_stem.sql",
+        "007_pollen_dew.sql",
+    ]
+    for migration in migrations:
         migration_path = migrations_dir / migration
         if migration_path.exists():
             result = subprocess.run(
@@ -93,6 +103,8 @@ def clean_tables(session):
     """
     # Truncate in reverse dependency order
     tables = [
+        "todos.pollen",
+        "todos.dew",
         "todos.activity_log",
         "todos.refs",
         "todos.bead_links",
@@ -100,7 +112,7 @@ def clean_tables(session):
         "todos.habits",
         "todos.bud_dependencies",
         "todos.buds",
-        "todos.branches",
+        "todos.stems",
         "todos.fruits",
         "todos.trunks",
         "todos.groves",
